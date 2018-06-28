@@ -20,7 +20,7 @@ self.bn1 = nn.BatchNorm2d(num_features=64)
 self.relu = nn.ReLU(inplace=True)
 self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 ```
-![root block](./root_block.jpg)
+![root block](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/root_block.jpg)
 
 root block 这一层是对输入进行初步的处理，注意这里使用的 7×7 filter, stride=2, padding=3 与输入并不匹配，实际上最右侧的一列会被忽略掉。
 $$
@@ -32,17 +32,17 @@ $$
 $$
 
 ##### Stack 1
-![stack 1](./stack1.jpg)
+![stack 1](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack1.jpg)
 
 stack 1 的 feature map 大小为56×56，与 root block 相同，所以 filter 数目也不用加倍，每一层都有64个3×3 filter。
 
 ##### Stack 2
-![stack 2](./stack2_1.jpg)
+![stack 2](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack2_1.jpg)
 
 stack 2 的 feature map 大小为28×28，比stack 1减小一半，所以 filter 数目也要加倍，每一层有128个3×3 filter。因此，stack 2 与 stack 1 衔接的那一层要用 stride=2 的filter，同样，shortcut 也要用128个 stride=2 的 1×1 filter 使得相加的时候维度相同。
 除此之外，其余层都使用如下相同结构
 
-![stack 2](./stack2_2.jpg)
+![stack 2](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack2_2.jpg)
 
 ##### Stack 3
 stack 3 的 feature map 大小为14×14，每一层有256个3×3 filter。
@@ -64,20 +64,20 @@ ResNet 50/101/152 由 root block，stack 1-4 组成，每一个 stack 都由 Bot
 与 ResNet 18/34 相同。
 
 ##### stack 1
-![stack 1](./stack3.jpg)
+![stack 1](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack3.jpg)
 
 stack 1 的 feature map 大小为56×56，与 root block 相同，所以使用 stride=1 的3×3 filter。但是filter的数目要增加到256，所以与 root block 衔接的那一层的 shortcut 也要用256个1×1 filter 来匹配。
 除此之外，其余层都使用如下相同结构：[1×1, 64] + [3×3, 64] + [1×1, 256]
 
-![stack 1](./stack3_2.jpg)
+![stack 1](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack3_2.jpg)
 
 ##### stack 2
-![stack 2](./stack4.jpg)
+![stack 2](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack4.jpg)
 
 stack 2 的 feature map 大小为28×28，比stack 1减小一半，所以使用 stride=2 的3×3 filter。但是filter的数目要增加到512，所以与 root block 衔接的那一层的 shortcut 也要用512个 stride=2 的 1×1 filter 来匹配。
 除此之外，其余层都使用如下相同结构：[1×1, 128] + [3×3, 128] + [1×1, 512]
 
-![stack 2](./stack4_2.jpg)
+![stack 2](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/stack4_2.jpg)
 
 ##### stack 3
 stack 3 的 feature map 大小为14×14，每一层结构为：[1×1, 256] + [3×3, 256] + [1×1, 1024]。
