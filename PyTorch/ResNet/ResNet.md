@@ -92,19 +92,116 @@ stack 3 的 feature map 大小为7×7，每一层结构为：[1×1, 512] + [3×3
 采用 (2048, 1000) 的 FC层，得到 (1, 1000) 向量。
 
 
+### 参数初始化
+```python
+for m in self.modules():
+    if isinstance(m, nn.Conv2d):
+        n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+        m.weight.data.normal_(0, math.sqrt(2. / n))
+    elif isinstance(m, nn.BatchNorm2d):
+        m.weight.data.fill_(1)
+        m.bias.data.zero_()
+```
+这里 conv 的 weight 用 kaiming_normal 来初始化，所有 conv 都没有 bias 项；BN 的 weight 初始化为1，bias 初始化为0。
 
+### 输入图片的预处理
+训练模型建立好了，下面看看输入图片在 feed 进 CNN 之前需要进行哪些预处理。文中是做了这些处理的：
+> The image is resized with its shorter side randomly sampled in [256, 480] for scale augmentation. A (224, 224) crop is randomly sampled from an image or its horizontal flip, with the per-pixel mean subtracted. The
+standard color augmentation is used.
 
+这里以 pytorch 中针对 imagenet 给出的[代码](https://github.com/FortiLeiZhang/model_zoo/blob/master/PyTorch/ResNet/resnet_imagenet.py)与文中所采用的方法有些不同，以 pytorch 代码中的方法为例。
+```python
+normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+```
+normalize 是对所有输入图片进行减均值除方差。均值和方差的数值是通过整个 imagenet 中的图片计算出来的，这里就当作已知的常数。
 
+从后面的代码可以看到，输入图片的预处理方式对于 train 和 val 是不同的。下面逐行分析一下代码。
 
+#### train dataset
+```python
+train_dataset = datasets.ImageFolder(
+    traindir,
+    transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ]))
+```
+第一步，先进行  [RandomResizedCrop](https://pytorch.org/docs/stable/_modules/torchvision/transforms/transforms.html#RandomResizedCrop)
+```python
+def __init__(self, size, scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), interpolation=Image.BILINEAR):
+    self.size = (size, size)
+    self.interpolation = interpolation
+    self.scale = scale
+    self.ratio = ratio
+```
+这里除了 size 设为224，其余都用的是 default 值。
+```python
+def get_params(img, scale, ratio):
+    for attempt in range(10):
+        area = img.size[0] * img.size[1]
+        target_area = random.uniform(*scale) * area
+        aspect_ratio = random.uniform(*ratio)
 
+        w = int(round(math.sqrt(target_area * aspect_ratio)))
+        h = int(round(math.sqrt(target_area / aspect_ratio)))
 
+        if random.random() < 0.5:
+            w, h = h, w
 
+        if w <= img.size[0] and h <= img.size[1]:
+            i = random.randint(0, img.size[1] - h)
+            j = random.randint(0, img.size[0] - w)
+            return i, j, h, w
 
+    # Fallback
+    w = min(img.size[0], img.size[1])
+    i = (img.size[1] - w) // 2
+    j = (img.size[0] - w) // 2
+    return i, j, w, w
+```
+这里对原图片进行最多10次随机切割，首先计算原图片面积，然后将原面积乘以一个随机的 scale，这里的 scale 是在 (0.08, 1) 之间随机产生，也就是说，输入 CNN 的图片仅仅是原图的一部分，最极端的情况下，只有 8% 的图片会被送入 CNN 中，但是图片的 label 是不变的，所以说最坏情况下，只能用图片 8% 的信息来进行学习和分类。
 
+然后在 (0.75, 1.3333333333333333) 之间随机取一个长宽比，计算 weight 和 height。
 
+这里还有一步依 50% 的概率随机对换 weight 和 height。所以 weight 和 height 哪个大哪个小是随机的。
 
+然后随机选择要切割图片的左上起始坐标 (i, j)。
 
+如果尝试10次都不成功，那么就只能从中间开始切割。
 
+到这里就得到了要从原图片中切割出的图片的坐标，这里切割出图片的 weight 和 height 与想要得到的图片的 size 没有任何的关系。
 
+然后把图片 crop 出来，最后把 crop 出来的图片 resize 到想要的 size。这里要求的 size 是(224, 224)，所以如果 crop 出来的图片 weight/height 大于 224，那么就要用 interpolation 进行 downsample；反之，进行 upsample。
 
-end
+因此，输入 CNN 的图片与原图片完全是两码事，首先是小，其次是失真。
+
+第二步，进行 [RandomHorizontalFlip](https://pytorch.org/docs/stable/_modules/torchvision/transforms/transforms.html#RandomHorizontalFlip)，
+就是沿着水平方向随机对切割出的图片进行翻转。然后再减均值除方差。这才得到真正 feed 进 CNN 的图片数据。
+
+#### val dataset
+```python
+val_dataset = datasets.ImageFolder(valdir,
+    transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ]))
+```
+对于 val dataset，第一步是将原图片 resize 到256，注意，这里的256是短边的大小，resize 后的图片依旧保持原来的长宽比。然后再从中间剪裁出一个 (224, 224) 的图片进行减均值除方差后送入 CNN。
+
+### standard 10-crop testing
+文中还提到了 [10-crop testing](https://pytorch.org/docs/master/torchvision/transforms.html#torchvision.transforms.TenCrop)
+> In testing, for comparison studies we adopt the standard 10-crop testing
+
+这里所谓的 10-crop 是指在 test 的时候，从原始图片及翻转后的图片中，从四个 corner 和 一个 center 各 crop 一个 (224, 224) 的图片，总共 10 张，然后对这10张图片进行 classification，对10次预测的结果 average。
+
+Identity Mappings in Deep Residual Networks
+---
+这篇文章更进一步的讨论了网络的设计，结论有两个：
+1. 不要在 shortcut 路径上做任何的操作，让输入 x 直接传到 addition 就是最好的方案。
+
+2. 重新设计了 block，把每一个 block 中的 BN 和 ReLU 从 conv 后提到了 conv 之前，即
+![resnet_pro](https://github.com/FortiLeiZhang/model_zoo/raw/master/PyTorch/ResNet/resnet_pro.jpg)
