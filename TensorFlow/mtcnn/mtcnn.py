@@ -53,6 +53,12 @@ def store_revision_info(output_dir, arg_string):
         f.write('arguments: %s\n--------------------\n' % arg_string)
         f.write('tensorflow version: %s\n--------------------\n' % tf.__version__)
 
+def to_rgb(img):
+    w, h = img.shape
+    ret = np.empty((w, h, 3), dtype=np.uint8)
+    ret[:, :, 0] = ret[:, :, 1] = ret[:, :, 2] = img
+    return ret  
+
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
@@ -88,9 +94,46 @@ def main(args):
         with sess.as_default():
             pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
 
+    random_key = np.random.randint(0, high=99999)
+    bounding_boxes_filename = os.path.join(output_dir, 'bounding_boxes_%05d.txt' % random_key)
+    text_file = open(bounding_boxes_filename, 'w')
 
-
-
+    num_images_total = 0
+    num_successfully_aligned = 0
+    if args.random_order:
+        random.shuffle(dataset)
+        
+    minsize = 20
+    threshold = [0.6, 0.7, 0.7]
+    factor = 0.709
+    
+    for cls in dataset:
+        output_class_dir = os.path.join(output_dir, cls.name)
+        if not os.path.exists(output_class_dir):
+            os.makedirs(output_class_dir)
+            if args.random_order:
+                random.shuffle(cls.images_paths)
+        for image_path in cls.image_paths:
+            num_images_total += 1
+            filename = os.path.splitext(os.path.split(image_path)[1])[0]
+            output_filename = os.path.join(output_class_dir, filename + '.png')
+            print(output_filename)
+            if not os.path.exists(output_filename):
+                try:
+                    img = misc.imread(image_path)
+                except (IOError, ValueError, IndexError) as e:
+                    errorMessage = '{}: {}'.format(image_path, e)
+                    print(errorMessage)
+                else:
+                    if img.ndim < 2:
+                        print('Unable to align "%s"' % image_path)
+                        text_file.write('%s\n' % (output_filename))
+                        continue
+                    if img.ndim == 2:
+                        img = to_rgb(img)
+                    img = img[:, :, 0:3]
+                    
+                    bounding_boxes, points = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
 
 
 

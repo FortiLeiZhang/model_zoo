@@ -172,6 +172,51 @@ def load_param(data_path, sess, net_name):
             var = tf.get_variable(var_name)
             sess.run(var.assign(data))
 
+def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
+    factor_cnt = 0
+    total_boxes = np.empty(0)
+    points = np.empty(0)
+    h, w = img.shape[0], img.shape[1]
+    min_l = np.amin([h, w])
+    m = 12.0 / minsize
+    min_l *= m
+    
+    
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+        
+
 def debug_print_tensor_variables():
     tensor_variables = tf.global_variables()
     for variable in tensor_variables:

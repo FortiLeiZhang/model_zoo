@@ -6,12 +6,12 @@ Facenet 的实现过程包括两步，首先是用 MTCNN 将图片中的人脸�
 
 MTCNN [原始论文](https://arxiv.org/abs/1604.02878) 中的 [代码](https://github.com/kpzhang93/MTCNN_face_detection_alignment) 是用 MATLAB 实现的。Facenet 只是将 MATLAB 代码翻译成了 TensorFlow , 并使用已经训练好的模型参数。这里不得不吐槽一下原始论文中的 MATLAB 代码，到处都是多余的 T 啊，有事没事的就来个转置，这肯定是平时写论文推公式养成的习惯，见到个矩阵后面就加个 T，本来好好的 (x, y) 坐标，非得要加个 T 变成 (y, x)，完事再 T 回来。Google 也耿直，翻译代码的时候也是见到 T 就 np.transpose。我试着将多余的转置去掉，发现不行，结果不对，可能现成的参数就是这么训练出来的，如果去掉转置的话，参数可能对不上。长话短说，还是先看代码吧。
 
-### Dataset : CASIA-maxpy-clean
+### 1. Dataset : CASIA-maxpy-clean
 Facenet 用的是 CASIA-webface dataset 进行训练。这个 dataset 在原始地址已经下载不到了，而且这个 dataset 据说有很多无效的图片，所以我用的是清理过的数据库。该数据库在百度网盘有下载：[下载地址](http://pan.baidu.com/s/1kUdRRJT)，提取密码为 3zbb。
 
 这个数据库有 10575 个类别，每个类别都有各自的文件夹，里面有同一个人的几张或者几十张不等的脸部图片。MTCNN 的工作就是从这些照片中把人物的脸框出来，然后交给下面的 Facenet 去处理。这里建立一个 ImageClass，存储各个类别的编号名称和该类别下所有图片的绝对路径。
 
-### 建立模型
+### 2. 建立 MTCNN 模型
 首先要在 main 函数中起一个 Graph，模型的图就建在这个 Graph 中，然后在此 Graph 中起一个 session 来运行函数执行命令建立三个 CNN：Proposal Network (P-Net), Refine Network (R-Net) 和 Output Network (O-Net)。
 ```python
 with tf.Graph().as_default():
@@ -127,7 +127,8 @@ pnet_fun = lambda img : sess.run(('pnet/p_net/conv4-2/BiasAdd:0', 'pnet/p_net/pr
 
 RNet 和 ONet 按照上述同样的方法搭建起来，整个 MTCNN 就搭建完成了。
 
-
+### 3. MTCNN 数据处理流程
+一张图片，从输入进 MTCNN，到最后将人脸框出来输出，MTCNN 究竟对这张图片进行了怎样的处理，我们一步一步来仔细研究一下 MTCNN 的数据处理流程。根据 MTCNN 中的三张网络 PNet， RNet 和 ONet，处理过程自然的分三步。
 
 
 
