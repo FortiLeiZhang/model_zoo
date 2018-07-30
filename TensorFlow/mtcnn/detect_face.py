@@ -172,50 +172,243 @@ def load_param(data_path, sess, net_name):
             var = tf.get_variable(var_name)
             sess.run(var.assign(data))
 
+def generateBoundingBox(imap, reg, scale, threshold):
+    stride = 2
+    cell_size = 12
+    
+    imap = np.transpose(imap)
+    
+    dx1 = np.transpose(reg[:, :, 0])
+    dy1 = np.transpose(reg[:, :, 1])
+    dx2 = np.transpose(reg[:, :, 2])
+    dy2 = np.transpose(reg[:, :, 3])
+    y, x = np.where(imap >= threshold)
+    
+    if y.shape[0] == 1:
+        dx1 = np.flipud(dx1)
+        dy1 = np.flipud(dy1)
+        dx2 = np.flipud(dx2)
+        dy2 = np.flipud(dy2)
+        
+    score = imap[(y, x)]
+    reg = np.transpose(np.vstack([dx1[(y, x)],  dy1[(y, x)], dx2[(y, x)], dy2[(y, x)]]))
+    if reg.size == 0:
+        reg = np.empty(0)
+    bb = np.transpose(np.vstack([y, x]))
+    q1 = np.fix((bb * stride + 1) / scale)
+    q2 = np.fix((bb * stride + cell_size) / scale)
+    boundingbox = np.hstack([q1, q2, np.expand_dims(score, 1), reg])
+    return boundingbox, reg
+            
+def imresample(img, sz):            
+    return cv2.resize(img, (sz[1], sz[0]), interpolation=cv2.INTER_AREA)
+
+def nms(boxes, threshold, method):
+    if boxes.size == 0:
+        return np.empty(0)
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    
+    score = boxes[:, 4]
+    I = np.argsort(score)
+    pick = np.zeros_like(score, dtype=np.uint16)
+    cnt = 0
+    while I.size > 0:
+        i = I[-1]
+        pick[cnt] = i
+        other = I[0:-1]
+        xx1 = np.maximum(x1[i], x1[other])
+        yy1 = np.maximum(y1[i], y1[other])
+        xx2 = np.minimum(x2[i], x2[other])
+        yy2 = np.minimum(y2[i], y2[other])
+        
+        ww = np.maximum(xx2 - xx1 + 1, 0.0)
+        hh = np.maximum(yy2 - yy1 + 1, 0.0)
+        inter_area = ww * hh
+        if method is 'Min':
+            o = inter_area / np.minimum(area[i], area[other])
+        if method is 'Union':
+            o = inter_area / (area[i] + area[other] - inter_area)
+        I = I[np.where(o <= threshold)]
+        cnt += 1
+    return pick[0:cnt]
+
+def rerec(bb):
+    h = bb[:, 3] - bb[:, 1]
+    w = bb[:, 2] - bb[:, 0]
+    l = np.maximum(w, h)
+    bb[:, 0] -= (l - w) * 0.5
+    bb[:, 1] -= (l - h) * 0.5
+    bb[:, 2:4] = bb[:, 0:2] + np.transpose(np.tile(l, (2, 1)))
+    return bb   
+
+def pad(total_boxes, w, h):
+    x1 = total_boxes[:, 0].copy().astype(np.int32)
+    y1 = total_boxes[:, 1].copy().astype(np.int32)
+    x2 = total_boxes[:, 2].copy().astype(np.int32)
+    y2 = total_boxes[:, 3].copy().astype(np.int32)
+   
+    tmp_w = (x2 - x1 + 1).astype(np.int32)
+    tmp_h = (y2 - y1 + 1).astype(np.int32)
+    num_box = total_boxes.shape[0]
+
+    x1_pad = np.ones((num_box), dtype=np.int32)
+    y1_pad = np.ones((num_box), dtype=np.int32)
+    x2_pad = tmp_w.copy().astype(np.int32)
+    y2_pad = tmp_h.copy().astype(np.int32)
+        
+    idx = np.where(x2 > w)
+    x2_pad.flat[idx] = np.expand_dims(tmp_w[idx] - (x2[idx] - w), 1)
+    x2[idx] = w
+    
+    idx = np.where(y2 > h)
+    y2_pad.flat[idx] = np.expand_dims(tmp_h[idx] - (y2[idx] - h), 1)
+    y2[idx] = h
+    
+    idx = np.where(x1 < 1)
+    x1_pad.flat[idx] = np.expand_dims(2 - x1[idx], 1)
+    x1[idx] = 1
+    
+    idx = np.where(y1 < 1)
+    y1_pad.flat[idx] = np.expand_dims(2 - y1[idx], 1)
+    y1[idx] = 1
+    
+    return (y1_pad, y2_pad, x1_pad, x2_pad, y1, y2, x1, x2, tmp_w, tmp_h)
+ 
+def bbreg(bb, offset):
+    if offset.shape[1] == 1:
+        offset = np.reshape(offset, (offset.shape[2], offset.shape[3]))
+        
+    w = bb[:, 2] - bb[:, 0] + 1
+    h = bb[:, 3] - bb[:, 1] + 1
+    b1 = bb[:, 0] + w * offset[:, 0]
+    b2 = bb[:, 1] + h * offset[:, 1]
+    b3 = bb[:, 2] + w * offset[:, 2]
+    b4 = bb[:, 3] + h * offset[:, 3]
+    bb [:, 0:4] = np.transpose(np.vstack([b1, b2, b3, b4]))
+    return bb
+    
 def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
     factor_cnt = 0
-    total_boxes = np.empty(0)
+    total_boxes = np.empty((0, 9))
     points = np.empty(0)
     h, w = img.shape[0], img.shape[1]
     min_l = np.amin([h, w])
     m = 12.0 / minsize
     min_l *= m
     
-    
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+    scales = []
+    while min_l >= 12:
+        scales += [m * np.power(factor, factor_cnt)]
+        min_l *= factor
+        factor_cnt += 1
         
+    for scale in scales:
+        hs = int(np.ceil(h * scale))
+        ws = int(np.ceil(w * scale))
+        im_data = imresample(img, (hs, ws))
+        im_data = (im_data - 127.5) * 0.0078125
+        img_T = np.transpose(np.expand_dims(im_data, 0), (0, 2, 1, 3))
+        out0, out1 = pnet(img_T)
+        out0 = np.transpose(out0, (0, 2, 1, 3))
+        out1 = np.transpose(out1, (0, 2, 1, 3))
+#         print(out0.shape)
+#         print(out1.shape)
+#         return out0, out1
+        boxes, reg = generateBoundingBox(out1[0, :, :, 1].copy(), out0[0, :, :, :].copy(), scale, threshold[0])
+#         return boxes, reg
+        pick = nms(boxes.copy(), 0.5, 'Union')
+#         return pick
+        if boxes.size > 0 and pick.size > 0:
+            boxes = boxes[pick, :]
+            total_boxes = np.append(total_boxes, boxes, axis=0)
+#     return total_boxes
+            
+    num_box = total_boxes.shape[0]
+    if num_box > 0:
+        pick = nms(total_boxes.copy(), 0.7, 'Union')
+        total_boxes = total_boxes[pick, :]
+        
+        reg_w = total_boxes[:, 2] - total_boxes[:, 0]
+        reg_h = total_boxes[:, 3] - total_boxes[:, 1]
+        qq1 = total_boxes[:, 0] + total_boxes[:, 5] * reg_w
+        qq2 = total_boxes[:, 1] + total_boxes[:, 6] * reg_h
+        qq3 = total_boxes[:, 2] + total_boxes[:, 7] * reg_w
+        qq4 = total_boxes[:, 3] + total_boxes[:, 8] * reg_h
+        
+        total_boxes = np.transpose(np.vstack([qq1, qq2, qq3, qq4, total_boxes[:, 4]]))
+        total_boxes = rerec(total_boxes.copy())
+        total_boxes[:, 0:4] = np.fix(total_boxes[:, 0:4]).astype(np.int32)
+
+        (y1_pad, y2_pad, x1_pad, x2_pad, y1, y2, x1, x2, tmp_w, tmp_h) = pad(total_boxes.copy(), w, h)
+
+    num_box = total_boxes.shape[0]
+    if num_box > 0:
+        temp_img = np.zeros((24, 24, 3, num_box))
+        for i in range(num_box):
+            tmp = np.zeros((int(tmp_h[i]), int(tmp_w[i]), 3))
+            tmp[y1_pad[i]-1:y2_pad[i], x1_pad[i]-1:x2_pad[i], :] = img[y1[i]-1:y2[i], x1[i]-1:x2[i], :]
+            if tmp.shape[0] > 0 and tmp.shape[1] > 0 or tmp.shape[0] == 0 and tmp.shape[1] == 0:
+                temp_img[:, :, :, i] = imresample(tmp, (24, 24))
+            else:
+                return np.empty()
+        temp_img = (temp_img - 127.5) * 0.0078125
+        input_img = np.transpose(temp_img, (3, 1, 0, 2))
+        out = rnet(input_img)
+        out0 = np.transpose(out[0])
+        out1 = np.transpose(out[1])
+#         return (out0, out1)
+        score = out1[1, :]
+        ipass = np.where(score > threshold[1])
+        total_boxes = np.hstack([total_boxes[ipass[0], 0:4].copy(), np.expand_dims(score[ipass[0]].copy(), 1)])
+        offset = out0[:, ipass[0]]
+        if total_boxes.shape[0] > 0:
+            pick = nms(total_boxes, 0.7, 'Union')
+            total_boxes = total_boxes[pick, :]
+            total_boxes = bbreg(total_boxes.copy(), np.transpose(offset[:, pick]))
+            total_boxes = rerec(total_boxes.copy())
+#         return total_boxes
+            total_boxes[:, 0:4] = np.fix(total_boxes[:, 0:4]).astype(np.int32)
+            (y1_pad, y2_pad, x1_pad, x2_pad, y1, y2, x1, x2, tmp_w, tmp_h) = pad(total_boxes.copy(), w, h)
+        
+    num_box = total_boxes.shape[0]
+    if num_box > 0:
+        tmp_img = np.zeros((48, 48, 3, num_box))
+        for i in range(num_box):
+            tmp = np.zeros((int(tmp_h[i]), int(tmp_w[i]), 3))
+            tmp[y1_pad[i]-1:y2_pad[i], x1_pad[i]-1:x2_pad[i], :] = img[y1[i]-1:y2[i], x1[i]-1:x2[i], :]
+            if tmp.shape[0] > 0 and tmp.shape[1] > 0 or tmp.shape[0] == 0 and tmp.shape[1] == 0:
+                tmp_img[:, :, :, i] = imresample(tmp, (48, 48))
+            else:
+                return np.empty()
+        tmp_img = (tmp_img - 127.5) * 0.0078125
+        input_img = np.transpose(tmp_img, (3, 1, 0, 2))
+        out = onet(input_img)
+#             return out
+        out0 = np.transpose(out[0])
+        out1 = np.transpose(out[1])
+        out2 = np.transpose(out[2])
+        score = out2[1, :]
+        ipass = np.where(score > threshold[2])
+        points = out1[:, ipass[0]]
+        offset = out0[:, ipass[0]]
+        total_boxes = np.hstack([total_boxes[ipass[0], 0:4].copy(), np.expand_dims(score[ipass[0]].copy(), 1)])
+
+        if total_boxes.shape[0] > 0:
+            ww = total_boxes[:, 2] - total_boxes[:, 0] + 1
+            hh = total_boxes[:, 3] - total_boxes[:, 1] + 1
+            points[0:5, :] = np.tile(total_boxes[:, 0], (5, 1)) + np.tile(ww, (5, 1)) * points[0:5, :] - 1
+            points[5:10, :] = np.tile(total_boxes[:, 1], (5, 1)) + np.tile(hh, (5, 1)) * points[5:10, :] - 1
+
+            total_boxes = bbreg(total_boxes.copy(), np.transpose(offset))
+            pick = nms(total_boxes.copy(), 0.7, 'Min')
+            total_boxes = total_boxes[pick, :]
+            points = points[:, pick]
+
+    return total_boxes, points
 
 def debug_print_tensor_variables():
     tensor_variables = tf.global_variables()

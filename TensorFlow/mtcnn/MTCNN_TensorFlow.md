@@ -133,7 +133,9 @@ RNet 和 ONet 按照上述同样的方法搭建起来，整个 MTCNN 就搭建�
 #### PNet
 ![PNet](https://github.com/FortiLeiZhang/model_zoo/raw/master/TensorFlow/mtcnn/PNet.jpg)
 
-先来看 PNet 的结构。注意到 PNet 中，除了 Conv，PReLU，MaxPool 以外，并没有 FC 层，所以 PNet 最终的输出是一张 (H, W, 16) 的 feature map，而不是一个 (16, ) 的 vector。实际上，在这里的代码实现中，10维的 landmark 并没有输出，所以输出是 (H, W, 6) 的特征图。通过计算，可以得到，特征图中的每一个 1×1 的特征点，对应在原图中的视野是 12×12 的，所以这就是上图中 input size 为 12×12×3 的原因。这不表示 PNet 的输入大小是 12×12×3，实际上，输入图片最小是 12×12 的，其他并没有限制。所以对于 PNet 来说，输入一张 (h, w, c) 的图片，输出一张 (H, W, 6) 的特征图。(h, w) 和 (H, W) 的关系是可以通过计算得到的，很简单。
+先来看 PNet 的结构。注意到 PNet 中，除了 Conv，PReLU，MaxPool 以外，并没有 FC 层，所以 PNet 最终的输出是一张 (H, W, 16) 的 feature map，而不是一个 (16, ) 的 vector。实际上，在这里的代码实现中，10维的 landmark 并没有输出，所以输出是 (H, W, 6) 的特征图。通过计算，可以得到，特征图中的每一个 1×1 的特征点，对应在原图中的视野是 12×12 的，所以这就是上图中 input size 为 12×12×3 的原因。这不表示 PNet 的输入大小是 12×12×3，实际上，输入图片最小是 12×12 的，其他并没有限制。所以对于 PNet 来说，输入一张 (h, w, c) 的图片，输出一张 (H, W, 6) 的特征图。相当于用 12×12 的 block 在原图上以 stride = 2 来滑动，输出一张特征图。 (h, w) 和 (H, W) 的关系是可以通过计算得到的，很简单。
+
+###### 输入图片的 rescale
 
 明白了 PNet 的结构以后，接下来看代码：
 ```python
@@ -157,7 +159,7 @@ PNet 能处理的最小图片大小是 12×12 的， minsize 设为20，即要�
 $$
 \text{scale} = m \cdot \text{factor}^n
 $$
-输入图片按照这些 scales 进行缩放，知道最短边的值小于 12 为止。从而得到了一组内容相同，大小不同的image pyramid。注意，这里对图片进行的是 resample，并不是 crop
+factor 在这里取 0.709。输入图片按照这些 scales 进行缩放，直到最短边的值小于 12 为止。从而得到了一组内容相同，大小不同的image pyramid。注意，这里对图片进行的是 resample，并不是 crop
 ```python
 def imresample(img, sz):
     im_data = cv2.resize(img, (sz[1], sz[0]), interpolation=cv2.INTER_AREA)
@@ -181,12 +183,84 @@ print(img3.shape)
 ```
 我不得不说，cv2 这个源码的作者，您的逻辑真是太清奇了，这么搞，不知道多少人要在这里出错啊。看 Google 的原始版本的代码，里面保留了一段 debug 代码，而且原作者在这个 [issue 的回复中](https://github.com/davidsandberg/facenet/issues/49) 里也提到了这段代码。我估计原来作者就是用 debug 这段代码来实现 resample 的，后来发现效率太低，速度太慢，转而用 cv2 实现，实现的时候也遇到了这个问题，所以才把这段代码留在这里。
 
+###### pnet 输出
 
+继续往下走，把输入图片 resample 以后，常规操作减均值除方差，然后转置一下送到 pnet 中。这里的转置是多余的，但是因为我们是直接 load 原作者的网络模型参数来用，所以一定要完全按照他训练时处理数据的方法来一模一样的处理数据。得到的 pnet 的输出，再转置回来。
 
+这里要检查一下输出的 out 对不对。具体方法是，输入同一张图片，用 Google 的原版代码产生一组 pnet，rnet 和 onet，在 pnet 的输出 out 后加一个返回值，自己的代码同样返回 pnet 的输出值，然后看两组 out 值差的绝对值之和，理论上应该为 0 或者很小的一个数字。下面写到 rnet 和 onet 的时候同样要作此检查。
 
+下一步看看 pnet 的输出值的实际意义是什么。首先看 out0 和 out1 的形状：
+```python
+print(img.shape)
+print(out0.shape)
+print(out1.shape)
+(250, 250, 3)
+(1, 70, 70, 4)
+(1, 70, 70, 2)
+```
+我们算一下：输入图片的大小是 250×250×3，首先要 scale，这里 minsize = 20，m = 12 / minsize = 3/5，实际输入 pnet 的第一张图片的大小是 250 × 3/5 = 150，经过第一层 (3×3/s:1/p:valid) conv，输出为 (150 - 3 + 1) / 1 = 148；第二层 (2×2/s:2/p:same) maxpool，输出为 148 / 2 = 74；第三层 (3×3/s:1/p:valid) conv，输出为 (74 -3 + 1) / 1 = 72；第四层 (3×3/s:1/p:valid) conv，输出为 (72 -3 + 1) / 1 = 70，所以输出的 feature map 应该形如 (70, 70)。
 
+来看 out0，它的形状是 (1, 70, 70, 4)，是 boudingbox regression，我们随机打印一个出来：
+```python
+[-0.04171251 -0.03393787 -0.05021905  0.14131135]
+```
+这些值具体是坐标，还是偏置，目前还看不出来。
 
+来看 out1，它的形状是 (1, 70, 70, 2)，是 face classification，随机打印一个：
+```python
+[0.9564381  0.04356182]
+```
+两者和是1，显然是一个概率值。第一个数字应该表示0，即不是人脸的概率，第二个数字表示是1，即是人脸的概率。
 
+###### 生成 boundingbox
+接下来是要产生 boundingbox，由于输入的图片经过了一次转置，所以接下来的所有操作都要转置来转置去，这个 [问题](https://github.com/ipazc/mtcnn/issues/4) 也有人问过原作者，据说是 MATLAB Caffe 的什么东西引起的，也没法解决。所以函数 generateBoundingBox 代码里的细节就不讨论了，只说说它的作用。首先它从输出的 feature map 中，找出判定是人脸的概率大于 threshold (这里取值 0.6) 的点的坐标，然后将这个坐标回溯出它在原图中的坐标。我们在上面讲过，特征图相当于用 12×12 的 block 在原图上以 stride = 2 来滑动得到的，特征图中的一个点的坐标，相当于原图中的一个 12×12 的 block，这个 block 的起始和终点坐标为：
+```python
+q1 = np.fix((bb * stride + 1) / scale)
+q2 = np.fix((bb * stride + cell_size) / scale)
+```
+最终输出的 boundingbox 是形如 (x, 9)，其中前4位是 block 在原图中的坐标，第5位是判定为人脸的概率，后4位是 boundingbox regression 的值。具体 boundingbox regression 到底是什么，现在还不清楚。
+
+###### NMS
+
+NMS (Non-Maximum Suppression)：在上述生成的 bb 中，找出判定为人脸概率最大的那个 bb，计算出这个 bb 的面积，然后计算其余 bb 与这个 bb 重叠面积的大小，用重叠面积除以：(Min) 两个 bb 中面积较小者；(Union) 两个 bb 的总和面积。如果这个值大于 threshold，那么就认为这两个 bb 框的是同一个地方，舍弃判定概率小的；如果小于 threshold，则认为两个 bb 框的是不同地方，保留判定概率小的。重复上述过程直至所有 bb 都遍历完成。
+
+将图片按照所有的 scale 处理过一遍后，会得到在原图上基于不同 scale 的所有的 bb，然后对这些 bb 再进行一次 NMS，并且这次 NMS 的 threshold 要提高。
+
+###### 校准 bb
+从这一步可以看出 bb regression 到底表示什么意义了。
+
+```python
+reg_w = total_boxes[:, 2] - total_boxes[:, 0]
+reg_h = total_boxes[:, 3] - total_boxes[:, 1]
+qq1 = total_boxes[:, 0] + total_boxes[:, 5] * reg_w
+qq2 = total_boxes[:, 1] + total_boxes[:, 6] * reg_h
+qq3 = total_boxes[:, 2] + total_boxes[:, 7] * reg_w
+qq4 = total_boxes[:, 3] + total_boxes[:, 8] * reg_h
+```
+显然，bb regression 是基于长宽 (h, w) 的相对于坐标 (x, y) 的偏置。原始的坐标 (x, y) 加上偏置以后，就得到了 pnet 校准后的 bb 坐标。接着还要把框调整一下成为一个正方形。最后一步是把超过原图边界的坐标剪裁一下。这就得到了真真正正的在原图上 bb 的坐标。
+
+到此为止，第一步 PNet 的任务就完成了，下一步工作交给 RNet。
+
+#### RNet
+
+RNet 的输入是 PNet 产生的所有 bb。不论 bb 的实际的大小，在输入 RNet 之前，一律 resize 成 (24, 24)。因为输入的大小是固定的，所以 RNet 中可以使用 FC 层，结果不再是 (H, W, 16) 的 feature map，而是 (16, ) 的向量。同样，代码里的输出的结果只里包含了 2 维的 face classification，4 维的 bounding box regression，并没有输出 10 维的 facial landmark localization。
+
+输入的 (24, 24, 3) 的图片经过 rnet，得到 2 维的 face classification，4 维的 bounding box regression。去掉判定为人脸的概率小于 threshold (0.7) 的，然后将剩下的 bb 做 NMS，最后将得到的 bb 坐标用 regression 中的 offset 精校一下，并填充为正方形。得到 RNet 输出的 bb。
+
+RNet 这一步不再产生新的 bb，而是对 PNet 产生的 bb 坐标的作进一步的精调。
+
+#### ONet
+ONet 的输入是 RNet 产生的所有 bb，并且 resize 成 (48, 48)。输出 2 维的 face classification，4 维的 bounding box regression，以及 10 维的 facial landmark localization。
+
+bb 及 regression 的处理方法同上。这里多出了 10 维的 facial landmark localization。从代码里看
+```python
+points[0:5, :] = np.tile(total_boxes[:, 0], (5, 1)) + np.tile(ww, (5, 1)) * points[0:5, :] - 1
+points[5:10, :] = np.tile(total_boxes[:, 1], (5, 1)) + np.tile(hh, (5, 1)) * points[5:10, :] - 1
+```
+
+这 10 维是相对于 bb 长宽的偏置，其中前 5 维是 x 坐标偏置，后 5 维是 y 坐标偏置。
+
+至此，我们就得到了一张图片中人脸框的坐标和五个点的坐标。
 
 
 

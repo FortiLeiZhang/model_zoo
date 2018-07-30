@@ -334,9 +334,10 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         img_y = np.transpose(img_x, (0,2,1,3))
         out = pnet(img_y)
         out0 = np.transpose(out[0], (0,2,1,3))
-        out1 = np.transpose(out[1], (0,2,1,3))
+        out1 = np.transpose(out[1], (0,2,1,3))    
 
-        boxes, _ = generateBoundingBox(out1[0,:,:,1].copy(), out0[0,:,:,:].copy(), scale, threshold[0])
+        boxes, reg = generateBoundingBox(out1[0,:,:,1].copy(), out0[0,:,:,:].copy(), scale, threshold[0])
+
         # inter-scale nms
         pick = nms(boxes.copy(), 0.5, 'Union')
         if boxes.size>0 and pick.size>0:
@@ -356,7 +357,8 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         total_boxes = np.transpose(np.vstack([qq1, qq2, qq3, qq4, total_boxes[:,4]]))
         total_boxes = rerec(total_boxes.copy())
         total_boxes[:,0:4] = np.fix(total_boxes[:,0:4]).astype(np.int32)
-        dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph = pad(total_boxes.copy(), w, h)
+
+        (dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph) = pad(total_boxes.copy(), w, h)
 
     numbox = total_boxes.shape[0]
     if numbox>0:
@@ -372,9 +374,10 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         tempimg = (tempimg-127.5)*0.0078125
         tempimg1 = np.transpose(tempimg, (3,1,0,2))
         out = rnet(tempimg1)
-
+        
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
+
         score = out1[1,:]
         ipass = np.where(score>threshold[1])
         total_boxes = np.hstack([total_boxes[ipass[0],0:4].copy(), np.expand_dims(score[ipass].copy(),1)])
@@ -669,11 +672,13 @@ def generateBoundingBox(imap, reg, scale, t):
     cellsize=12
 
     imap = np.transpose(imap)
+
     dx1 = np.transpose(reg[:,:,0])
     dy1 = np.transpose(reg[:,:,1])
     dx2 = np.transpose(reg[:,:,2])
     dy2 = np.transpose(reg[:,:,3])
     y, x = np.where(imap >= t)
+
     if y.shape[0]==1:
         dx1 = np.flipud(dx1)
         dy1 = np.flipud(dy1)
@@ -684,8 +689,10 @@ def generateBoundingBox(imap, reg, scale, t):
     if reg.size==0:
         reg = np.empty((0,3))
     bb = np.transpose(np.vstack([y,x]))
+
     q1 = np.fix((stride*bb+1)/scale)
     q2 = np.fix((stride*bb+cellsize-1+1)/scale)
+
     boundingbox = np.hstack([q1, q2, np.expand_dims(score,1), reg])
     return boundingbox, reg
  
@@ -755,7 +762,7 @@ def pad(total_boxes, w, h):
     dy.flat[tmp] = np.expand_dims(2-y[tmp],1)
     y[tmp] = 1
     
-    return dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph
+    return (dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph)
 
 # function [bboxA] = rerec(bboxA)
 def rerec(bboxA):
