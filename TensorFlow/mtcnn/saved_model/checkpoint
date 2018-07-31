@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/lzhang/mtcnn_result/saved_model/model.ckpt"
+all_model_checkpoint_paths: "/home/lzhang/mtcnn_result/saved_model/model.ckpt"

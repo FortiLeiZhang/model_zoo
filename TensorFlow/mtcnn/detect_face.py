@@ -125,6 +125,35 @@ class ONet(tf.keras.Model):
 
         return tf.zeros([1])
 
+def save_mtcnn(sess, saver, model_path):
+    checkpoint_path = os.path.join(model_path, 'model.ckpt')
+    print('Saving checkpoint.')
+    saver.save(sess, checkpoint_path, write_meta_graph=False)
+    metagraph_filename = os.path.join(model_path, 'model.meta')
+    if not os.path.exists(metagraph_filename):
+        print('Saving metagraph.')
+        saver.export_meta_graph(metagraph_filename)
+
+def load_mtcnn(sess, model_path):   
+    files = os.listdir(model_path)
+    meta_files = [file for file in files if file.endswith('.meta')]
+    if len(meta_files) != 1:
+        raise ValueError('Wrong meta file number.')
+    meta_file = meta_files[0]
+    
+    ckpt = tf.train.get_checkpoint_state(model_path)
+    if ckpt and ckpt.model_checkpoint_path:
+        ckpt_file = os.path.basename(ckpt.model_checkpoint_path)
+    
+    saver = tf.train.import_meta_graph(os.path.join(model_path, meta_file))
+    saver.restore(tf.get_default_session(), os.path.join(model_path, ckpt_file))
+    
+    pnet_fun = lambda img : sess.run(('pnet/p_net/conv4-2/BiasAdd:0', 'pnet/p_net/prob1/truediv:0'), feed_dict={'pnet/input:0':img})
+    rnet_fun = lambda img : sess.run(('rnet/r_net/conv5-2/BiasAdd:0', 'rnet/r_net/prob1/Softmax:0'), feed_dict={'rnet/input:0':img})
+    onet_fun = lambda img : sess.run(('onet/o_net/conv6-2/BiasAdd:0', 'onet/o_net/conv6-3/BiasAdd:0', 'onet/o_net/prob1/Softmax:0'), feed_dict={'onet/input:0':img})
+    
+    return pnet_fun, rnet_fun, onet_fun
+
 def create_mtcnn(sess, model_path):
     if not model_path:
         model_path, _ = os.path.split(os.path.realpath(__file__))
@@ -193,7 +222,7 @@ def generateBoundingBox(imap, reg, scale, threshold):
     score = imap[(y, x)]
     reg = np.transpose(np.vstack([dx1[(y, x)],  dy1[(y, x)], dx2[(y, x)], dy2[(y, x)]]))
     if reg.size == 0:
-        reg = np.empty(0)
+        reg = np.empty((0,3))
     bb = np.transpose(np.vstack([y, x]))
     q1 = np.fix((bb * stride + 1) / scale)
     q2 = np.fix((bb * stride + cell_size) / scale)
@@ -311,8 +340,8 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         ws = int(np.ceil(w * scale))
         im_data = imresample(img, (hs, ws))
         im_data = (im_data - 127.5) * 0.0078125
-        img_T = np.transpose(np.expand_dims(im_data, 0), (0, 2, 1, 3))
-        out0, out1 = pnet(img_T)
+        input_img = np.transpose(np.expand_dims(im_data, 0), (0, 2, 1, 3))
+        out0, out1 = pnet(input_img)
         out0 = np.transpose(out0, (0, 2, 1, 3))
         out1 = np.transpose(out1, (0, 2, 1, 3))
 #         print(out0.shape)

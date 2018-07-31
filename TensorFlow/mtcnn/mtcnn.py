@@ -13,9 +13,6 @@ from time import sleep
 
 import detect_face
 
-if __name__ == '__main__':
-    main(parse_arguments(sys.argv[1:]))
-
 class ImageClass():
     def __init__(self, name, image_paths):
         self.name = name
@@ -62,8 +59,8 @@ def to_rgb(img):
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('input_dir', type=str, help='Directory with unaligned images.')
-    parser.add_argument('output_dir', type=str, help='Directory with aligned face thumbnails.')
+    parser.add_argument('input_dir', type=str, help='Directory with unaligned images.', default='/home/lzhang/tmp/')
+    parser.add_argument('output_dir', type=str, help='Directory with aligned face thumbnails.', default='/home/lzhang/mtcnn_result')
     parser.add_argument('--image_size', type=int, help='Image size (height, width) in pixels.', default=182)
     parser.add_argument('--margin', type=int, 
                        help='Margin for the crop around the bounding box (height, width) in pixels.', default=44)
@@ -93,6 +90,14 @@ def main(args):
         sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options, log_device_placement=False))
         with sess.as_default():
             pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
+            saver = tf.train.Saver()
+            model_dir = os.path.join(args.output_dir, 'saved_model')
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
+            detect_face.save_mtcnn(sess, saver, model_dir)
+#         with sess.as_default():
+#             model_dir = '/home/lzhang/tmp/saved_model/'
+#             pnet, rnet, onet = detect_face.load_mtcnn(sess, model_dir)
 
     random_key = np.random.randint(0, high=99999)
     bounding_boxes_filename = os.path.join(output_dir, 'bounding_boxes_%05d.txt' % random_key)
@@ -112,12 +117,12 @@ def main(args):
         if not os.path.exists(output_class_dir):
             os.makedirs(output_class_dir)
             if args.random_order:
-                random.shuffle(cls.images_paths)
+                random.shuffle(cls.image_paths)
         for image_path in cls.image_paths:
             num_images_total += 1
             filename = os.path.splitext(os.path.split(image_path)[1])[0]
             output_filename = os.path.join(output_class_dir, filename + '.png')
-            print(output_filename)
+            print(image_path)
             if not os.path.exists(output_filename):
                 try:
                     img = misc.imread(image_path)
@@ -133,16 +138,49 @@ def main(args):
                         img = to_rgb(img)
                     img = img[:, :, 0:3]
                     
-                    bounding_boxes, points = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
+                    bb, points = detect_face.detect_face(img, minsize, pnet, rnet, onet, threshold, factor)
 
+                    num_faces = bb.shape[0]
+                    if num_faces > 0:
+                        det = bb[:, 0:4]
+                        det_arr = []
+                        h, w = np.asarray(img.shape)[0:2]
+                        if num_faces > 1:
+                            if args.detect_multiple_faces:
+                                for i in range(num_faces):
+                                    det_arr.append(np.squeeze(det[i]))
+                            else:
+                                bb_size = (det[:, 2] - det[:, 0]) * (det[:, 3] - det[:, 1])
+                                offsets = np.vstack([(det[:, 2] + det[:, 0] - w) / 2, (det[:, 3] + det[:, 1] - h) / 2])
+                                offset_square = np.sum(np.power(offsets, 2.0), 0)
+                                index = np.argmax(bb_size - offset_square * 2.0)
+                                det_arr.append(det[index, :])
+                        else:
+                            det_arr.append(np.squeeze(det))
+                        
+                        for i, det in enumerate(det_arr):
+                            det = np.squeeze(det)
+                            bb = np.zeros(4, dtype=np.int32)
+                            bb[0] = np.maximum(det[0] - args.margin/2, 0)
+                            bb[1] = np.maximum(det[1] - args.margin/2, 0)
+                            bb[2] = np.minimum(det[2] + args.margin/2, w)
+                            bb[3] = np.minimum(det[3] + args.margin/2, h)
+                            cropped = img[bb[1]:bb[3], bb[0]:bb[2], :]
+                            scaled = misc.imresize(cropped, (args.image_size, args.image_size), interp='bilinear')
+                            num_successfully_aligned += 1
+                            filename_base, file_extension = os.path.splitext(output_filename)
+                            if args.detect_multiple_faces:
+                                output_filename_n = "{}_{}{}".format(filename_base, i, file_extension)
+                            else:
+                                output_filename_n = "{}{}".format(filename_base, file_extension)
+                            misc.imsave(output_filename_n, scaled)
+                            text_file.write('%s %d %d %d %d\n' % (output_filename_n, bb[0], bb[1], bb[2], bb[3]))
+                    else:
+                        print('Unable to align "%s"' % image_path)
+                        text_file.write('%s\n' % (output_filename))
+    text_file.close()
+    print('Total number of images: %d' % num_images_total)
+    print('Number of successfully aligned images: %d' % num_successfully_aligned)
 
-
-
-
-
-
-
-
-
-
-
+if __name__ == '__main__':
+    main(parse_arguments(sys.argv[1:]))
