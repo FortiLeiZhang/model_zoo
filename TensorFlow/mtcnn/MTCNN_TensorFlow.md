@@ -262,10 +262,22 @@ points[5:10, :] = np.tile(total_boxes[:, 1], (5, 1)) + np.tile(hh, (5, 1)) * poi
 
 至此，我们就得到了一张图片中人脸框的坐标和五个点的坐标。下面的工作就是把 bb 从原图中抠出来，这里就不详述了。
 
+### 4. MTCNN TensorFLow Serving
+需要将 mtcnn 中建立的 pnet/rnet/onet 保存下来，并且转换成 tensorflow serving 可用的格式，然后起一个 tensorflow_model_server 来运行 model。
 
+#### 使用 tf.train.Saver() 保存模型
+代码里需要保存的文件有两个：metagraph (model.meta) 文件和 checkpoint (model.ckpt) 文件。实际生成的文件有 4 个：(model.meta) 文件保存了 metagraph 信息，即计算图的结构；(model.ckpt.data) 文件保存了 graph 中的所有变量的数据；(model.ckpt.index) 保存了如何将 meta 和 data 匹配起来的信息；(checkpoint) 文件保存了文件的绝对路径，告诉 TF 最新的 ckpt 是哪个，保存在哪里，在使用 tf.train.latest_checkpoint 加载的时候要用到这些信息，但是如果改变或者删除了文件中保存的路径，那么加载的时候会出错，找不到文件。
 
+#### 使用 tf.saved_model.builder.SavedModelBuilder() 保存模型
+使用 tf.train.Saver() 保存的模型在 TF serving 上不能用，因此需要将上述模型用 SavedModelBuilder 来 export 成 TF serving model。这里仅通过 mtcnn 这个例子来看看如何 export 一个 model，SavedModelBuilder 更复杂的用法，以后见到再见招拆招吧。
 
+首先要将上述保存的模型加载进来，然后通过名字来找到输入输出 tensor，并写入模型的 signature 中。最后用 SavedModelBuilder 将 graph 和 data 匹配起来保存。保存生成的文件有三个，(saved_model.pb) 是模型的 protobuf 文件；模型的数据保存在 variables 文件夹下的 (variables.data) 和 (variables.index) 两个文件中。
 
+#### TF serving
+```
+sudo tensorflow_model_server --port=9000 --enable_batching=true --model_config_file=/home/lzhang/model_zoo/TensorFlow/mtcnn/model.config
+```
+启动 TF serving 服务的时候，要为 model 建一个 config 文件，里面写明了 model 的路径和名称。在 client 调用服务的时候，要用到这里制定的 model 的名称和上一步定义的 signature。
 
 
 
