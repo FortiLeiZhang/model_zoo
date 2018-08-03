@@ -10,6 +10,7 @@ import tensorflow as tf
 import numpy as np
 import random
 from time import sleep
+import base64
 
 import detect_face
 
@@ -83,7 +84,7 @@ def main(args):
     
     dataset = get_dataset(args.input_dir)
     
-    print('Creating networks and loading parameters')
+    print('Creating networks and loading parameters!')
     
     with tf.Graph().as_default():
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_memory_fraction)
@@ -91,7 +92,7 @@ def main(args):
         with sess.as_default():
             pnet, rnet, onet = detect_face.create_mtcnn(sess, None)
             saver = tf.train.Saver()
-            model_dir = os.path.join(args.output_dir, 'saved_model')
+            model_dir = os.path.join(args.output_dir, 'saved_model_for_serving')
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
             detect_face.save_mtcnn(sess, saver, model_dir)

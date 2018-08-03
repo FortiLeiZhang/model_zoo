@@ -9,6 +9,13 @@ def load_model(model_path, sess):
     print(model_path)
     model.restore(sess, ckpt_file)
 
+def encoded_image_string_tensor_input_placeholder():
+    image_string_tensor = tf.placeholder(shape=[None], dtype=tf.string, name='encoded_image_string_tensor')
+    image_tensor = tf.image.decode_image(encoded_image_string_tensor, channels=3)
+    image_tensor.set_shape((None, None, 3))
+    
+    return image_string_tensor, image_tensor
+    
 def export_mtcnn(base_path):
     export_version = 1
     
@@ -18,17 +25,18 @@ def export_mtcnn(base_path):
     sess.run(tf.global_variables_initializer())
     sess.run(tf.local_variables_initializer())
     
-    model_path = os.path.join(base_path, 'saved_model')
+    model_path = os.path.join(base_path, 'saved_model_for_serving')
     print('Loading model from', model_path)
     load_model(model_path, sess)
     
-    export_path = os.path.join(base_path, 'export_model', str(export_version))
+    export_path = os.path.join(base_path, 'export_model_for_serving', str(export_version))
     if os.path.exists(export_path):
         os.removedirs(export_path)
     print('Exporting model to', export_path)
     
     graph = tf.get_default_graph()
-    x_pnet = graph.get_tensor_by_name('pnet/input:0')
+    
+    x_pnet = graph.get_tensor_by_name('pnet/encoded_image_string_tensor:0')   
     y_pnet1 = graph.get_tensor_by_name('pnet/p_net/conv4-2/BiasAdd:0')
     y_pnet2 = graph.get_tensor_by_name('pnet/p_net/prob1/truediv:0')
     pnet_sig = (tf.saved_model.signature_def_utils.build_signature_def(
@@ -37,7 +45,7 @@ def export_mtcnn(base_path):
                  'result2': tf.saved_model.utils.build_tensor_info(y_pnet2)},
         method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
     
-    x_rnet = graph.get_tensor_by_name('rnet/input:0')
+    x_rnet = graph.get_tensor_by_name('rnet/encoded_image_string_tensor:0')   
     y_rnet1 = graph.get_tensor_by_name('rnet/r_net/conv5-2/BiasAdd:0')
     y_rnet2 = graph.get_tensor_by_name('rnet/r_net/prob1/Softmax:0')
     rnet_sig = (tf.saved_model.signature_def_utils.build_signature_def(
@@ -45,8 +53,8 @@ def export_mtcnn(base_path):
         outputs={'result1': tf.saved_model.utils.build_tensor_info(y_rnet1),
                  'result2': tf.saved_model.utils.build_tensor_info(y_rnet2)},
         method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
-    
-    x_onet = graph.get_tensor_by_name('onet/input:0')
+
+    x_onet = graph.get_tensor_by_name('onet/encoded_image_string_tensor:0')
     y_onet1 = graph.get_tensor_by_name('onet/o_net/conv6-2/BiasAdd:0')
     y_onet2 = graph.get_tensor_by_name('onet/o_net/conv6-3/BiasAdd:0')
     y_onet3 = graph.get_tensor_by_name('onet/o_net/prob1/Softmax:0')

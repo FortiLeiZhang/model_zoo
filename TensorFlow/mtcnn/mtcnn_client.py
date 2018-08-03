@@ -2,12 +2,19 @@ import time
 import cv2
 import numpy as np
 from scipy import misc
+import base64
+from io import BytesIO
+from PIL import Image
 
 import tensorflow as tf
 from grpc.beta import implementations
 from tensorflow.python.framework.tensor_util import MakeNdarray
 from tensorflow_serving.apis import predict_pb2
 from tensorflow_serving.apis import prediction_service_pb2
+
+from tensorflow.core.framework import tensor_pb2
+from tensorflow.core.framework import tensor_shape_pb2
+from tensorflow.core.framework import types_pb2
 
 def __imresample(img, sz):
     return cv2.resize(img, (sz[1], sz[0]), interpolation=cv2.INTER_AREA)
@@ -132,6 +139,17 @@ def __bbreg(boundingbox, reg):
     boundingbox[:, 0:4] = np.transpose(np.vstack([b1, b2, b3, b4]))
     return boundingbox
 
+def generate_input_string(image):
+    image_data_arr = []
+    for i in range(image.shape[0]):
+        byte_io = BytesIO()
+        img = Image.fromarray(image[i, :, :, :].astype(np.uint8).squeeze())
+
+        img.save(byte_io, 'JPEG')
+        byte_io.seek(0)
+        image_data = byte_io.read()
+        image_data_arr.append([image_data])
+    return image_data_arr
 
 def pnet_serving(image):
     host = '127.0.0.1'
@@ -144,40 +162,23 @@ def pnet_serving(image):
 
     request.model_spec.name = 'mtcnn'
 
-    request.model_spec.signature_name = 'pnet_predict'
+    request.model_spec.signature_name = 'pnet_predict'   
 
-    tp = tf.make_tensor_proto(image, dtype=tf.float32, shape=image.shape)
 
-    request.inputs['images'].CopyFrom(tp)
+    image_data_arr = generate_input_string(image)
+    image_data_arr = np.asarray(image_data_arr).squeeze(axis=1)
+
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=1)]
+    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
+    tensor_proto = tensor_pb2.TensorProto(
+        dtype=types_pb2.DT_STRING,
+        tensor_shape=tensor_shape_proto,
+        string_val=[image_data for image_data in image_data_arr])
+    request.inputs['images'].CopyFrom(tensor_proto)
 
     result = stub.Predict(request, 10.0)
     return [MakeNdarray(result.outputs['result1']),
             MakeNdarray(result.outputs['result2'])]
-
-
-def onet_serving(image):
-    host = '127.0.0.1'
-    port = 9000
-
-    channel = implementations.insecure_channel(host, port)
-    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-
-    request = predict_pb2.PredictRequest()
-
-    request.model_spec.name = 'mtcnn'
-
-    request.model_spec.signature_name = 'onet_predict'
-
-    tp = tf.make_tensor_proto(image, dtype=tf.float32, shape=image.shape)
-
-    request.inputs['images'].CopyFrom(tp)
-
-    result = stub.Predict(request, 10.0)
-
-    return [MakeNdarray(result.outputs['result1']),
-            MakeNdarray(result.outputs['result2']),
-            MakeNdarray(result.outputs['result3'])]
-
 
 def rnet_serving(image):
     host = '127.0.0.1'
@@ -192,14 +193,50 @@ def rnet_serving(image):
 
     request.model_spec.signature_name = 'rnet_predict'
 
-    tp = tf.make_tensor_proto(image, dtype=tf.float32, shape=image.shape)
+    image_data_arr = generate_input_string(image)
+    image_data_arr = np.asarray(image_data_arr).squeeze()
 
-    request.inputs['images'].CopyFrom(tp)
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
+    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
+    tensor_proto = tensor_pb2.TensorProto(
+        dtype=types_pb2.DT_STRING,
+        tensor_shape=tensor_shape_proto,
+        string_val=[image_data for image_data in image_data_arr])
+    request.inputs['images'].CopyFrom(tensor_proto)    
 
     result = stub.Predict(request, 10.0)
     return [MakeNdarray(result.outputs['result1']),
             MakeNdarray(result.outputs['result2'])]
 
+def onet_serving(image):
+    host = '127.0.0.1'
+    port = 9000
+
+    channel = implementations.insecure_channel(host, port)
+    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
+
+    request = predict_pb2.PredictRequest()
+
+    request.model_spec.name = 'mtcnn'
+
+    request.model_spec.signature_name = 'onet_predict'
+
+    image_data_arr = generate_input_string(image)
+    image_data_arr = np.asarray(image_data_arr).squeeze()
+
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
+    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
+    tensor_proto = tensor_pb2.TensorProto(
+        dtype=types_pb2.DT_STRING,
+        tensor_shape=tensor_shape_proto,
+        string_val=[image_data for image_data in image_data_arr])
+    request.inputs['images'].CopyFrom(tensor_proto) 
+
+    result = stub.Predict(request, 10.0)
+
+    return [MakeNdarray(result.outputs['result1']),
+            MakeNdarray(result.outputs['result2']),
+            MakeNdarray(result.outputs['result3'])]
 
 def detect_face(img, minsize=20, threshold=None, factor=0.709):
     if threshold is None:
@@ -225,9 +262,11 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
         hs = int(np.ceil(h * scale))
         ws = int(np.ceil(w * scale))
         im_data = __imresample(img, (hs, ws))
-        im_data = (im_data - 127.5) * 0.0078125
+        
         img_x = np.expand_dims(im_data, 0)
         img_y = np.transpose(img_x, (0, 2, 1, 3))
+#         img_y = (img_y - 127.5) * 0.0078125
+
         out = pnet_serving(img_y)
         out0 = np.transpose(out[0], (0, 2, 1, 3))
         out1 = np.transpose(out[1], (0, 2, 1, 3))
@@ -266,8 +305,9 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
                 tempimg[:, :, :, k] = __imresample(tmp, (24, 24))
             else:
                 return np.empty()
-        tempimg = (tempimg - 127.5) * 0.0078125
+        
         tempimg1 = np.transpose(tempimg, (3, 1, 0, 2))
+#         tempimg = (tempimg - 127.5) * 0.0078125
         out = rnet_serving(tempimg1)
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
@@ -295,9 +335,9 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
                 tempimg[:, :, :, k] = __imresample(tmp, (48, 48))
             else:
                 return np.empty()
-
-        tempimg = (tempimg - 127.5) * 0.0078125
+        
         tempimg1 = np.transpose(tempimg, (3, 1, 0, 2))
+#         tempimg = (tempimg - 127.5) * 0.0078125
         out = onet_serving(tempimg1)
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
@@ -323,7 +363,7 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
     return total_boxes, points
 
 def main():
-    img = misc.imread('/home/lzhang/tmp/0000045/001.jpg')
+    img = misc.imread('/home/lzhang/tmp/0000045/002.jpg')
     bboxes, points = detect_face(img)
 
     face_crop_margin = 10
@@ -343,7 +383,7 @@ def main():
         cropped = img[top:bottom, left:right, :]
         cropped_img = cv2.resize(cropped, (face_size, face_size), interpolation=cv2.INTER_LINEAR)
 
-        misc.imsave('/home/lzhang/tmp/0000045/001_cropped.jpg', cropped_img)
+        misc.imsave('/home/lzhang/tmp/0000045/002_cropped.jpg', cropped_img)
 
 if __name__ == '__main__':
     main()

@@ -7,6 +7,8 @@ import numpy as np
 import tensorflow as tf
 import cv2
 import os
+from scipy import misc
+import base64
 
 class PNet(tf.keras.Model):
     def __init__(self):
@@ -154,32 +156,58 @@ def load_mtcnn(sess, model_path):
     
     return pnet_fun, rnet_fun, onet_fun
 
+def decode_encoded_image_string_tensor(encoded_image_string_tensor):
+    image_tensor = tf.image.decode_image(encoded_image_string_tensor, channels=3)
+    image_tensor.set_shape((None, None, 3))
+    return image_tensor
+
 def create_mtcnn(sess, model_path):
     if not model_path:
         model_path, _ = os.path.split(os.path.realpath(__file__))
         
     with tf.variable_scope('pnet', reuse=tf.AUTO_REUSE):
-        data = tf.placeholder(tf.float32, (None, None, None, 3), 'input')
+        batch_image_str_placeholder = tf.placeholder(dtype=tf.string, shape=[None, ], name='encoded_image_string_tensor')
+        pnet_image_tensor = tf.map_fn(decode_encoded_image_string_tensor, elems=batch_image_str_placeholder, dtype=tf.uint8, back_prop=False)
+
+        pnet_image_tensor = tf.cast(pnet_image_tensor, tf.float32)
+        pnet_image_tensor = tf.subtract(pnet_image_tensor, 127.5)
+        pnet_image_tensor = tf.multiply(pnet_image_tensor, 0.0078125)
+        pnet_image_tensor.set_shape((None, None, None, 3))
+        
         pnet = PNet()
-        pnet(data)
+        pnet(pnet_image_tensor)
 #         debug_print_tensor_variables()
         load_param(os.path.join(model_path, 'det1.npy'), sess, 'p_net')
 #     debug_print_tensor_operations()
-    pnet_fun = lambda img : sess.run(('pnet/p_net/conv4-2/BiasAdd:0', 'pnet/p_net/prob1/truediv:0'), feed_dict={'pnet/input:0':img})
+    pnet_fun = lambda img : sess.run(('pnet/p_net/conv4-2/BiasAdd:0', 'pnet/p_net/prob1/truediv:0'), feed_dict={'pnet/encoded_image_string_tensor:0':img})
     
     with tf.variable_scope('rnet', reuse=tf.AUTO_REUSE):
-        data = tf.placeholder(tf.float32, (None, 24, 24, 3), 'input')
+        batch_image_str_placeholder = tf.placeholder(dtype=tf.string, shape=[None], name='encoded_image_string_tensor')
+        rnet_image_tensor = tf.map_fn(decode_encoded_image_string_tensor, elems=batch_image_str_placeholder, dtype=tf.uint8, back_prop=False)
+        
+        rnet_image_tensor = tf.cast(rnet_image_tensor, tf.float32)
+        rnet_image_tensor = tf.subtract(rnet_image_tensor, 127.5)
+        rnet_image_tensor = tf.multiply(rnet_image_tensor, 0.0078125)
+        rnet_image_tensor.set_shape((None, 24, 24, 3))
+
         rnet = RNet()
-        rnet(data)
+        rnet(rnet_image_tensor)
         load_param(os.path.join(model_path, 'det2.npy'), sess, 'r_net')
-    rnet_fun = lambda img : sess.run(('rnet/r_net/conv5-2/BiasAdd:0', 'rnet/r_net/prob1/Softmax:0'), feed_dict={'rnet/input:0':img})
-    
+    rnet_fun = lambda img : sess.run(('rnet/r_net/conv5-2/BiasAdd:0', 'rnet/r_net/prob1/Softmax:0'), feed_dict={'rnet/encoded_image_string_tensor:0':img})
+
     with tf.variable_scope('onet', reuse=tf.AUTO_REUSE):
-        data = tf.placeholder(tf.float32, (None, 48, 48, 3), 'input')
+        batch_image_str_placeholder = tf.placeholder(dtype=tf.string, shape=[None], name='encoded_image_string_tensor')
+        onet_image_tensor = tf.map_fn(decode_encoded_image_string_tensor, elems=batch_image_str_placeholder, dtype=tf.uint8, back_prop=False)
+        
+        onet_image_tensor = tf.cast(onet_image_tensor, tf.float32)
+        onet_image_tensor = tf.subtract(onet_image_tensor, 127.5)
+        onet_image_tensor = tf.multiply(onet_image_tensor, 0.0078125)
+        onet_image_tensor.set_shape((None, 48, 48, 3))
+        
         onet = ONet()
-        onet(data)
+        onet(onet_image_tensor)
         load_param(os.path.join(model_path, 'det3.npy'), sess, 'o_net')
-    onet_fun = lambda img : sess.run(('onet/o_net/conv6-2/BiasAdd:0', 'onet/o_net/conv6-3/BiasAdd:0', 'onet/o_net/prob1/Softmax:0'), feed_dict={'onet/input:0':img})
+    onet_fun = lambda img : sess.run(('onet/o_net/conv6-2/BiasAdd:0', 'onet/o_net/conv6-3/BiasAdd:0', 'onet/o_net/prob1/Softmax:0'), feed_dict={'onet/encoded_image_string_tensor:0':img})
     
     return pnet_fun, rnet_fun, onet_fun 
 
@@ -334,14 +362,28 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
         scales += [m * np.power(factor, factor_cnt)]
         min_l *= factor
         factor_cnt += 1
-        
+
     for scale in scales:
         hs = int(np.ceil(h * scale))
         ws = int(np.ceil(w * scale))
         im_data = imresample(img, (hs, ws))
-        im_data = (im_data - 127.5) * 0.0078125
+
+#         im_data = (im_data - 127.5) * 0.0078125
         input_img = np.transpose(np.expand_dims(im_data, 0), (0, 2, 1, 3))
-        out0, out1 = pnet(input_img)
+        
+#         input_img = input_img.copy(order='C')
+#         image_data = [base64.b64encode(input_img)]
+        
+        image_data_arr = []
+        for i in range(input_img.shape[0]):
+            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
+            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
+            image_data_arr.append([image_data])
+
+        image_data_arr = np.asarray(image_data_arr).squeeze(axis=1)
+        out0, out1 = pnet(image_data_arr)
+
+#         out0, out1 = pnet(input_img)
         out0 = np.transpose(out0, (0, 2, 1, 3))
         out1 = np.transpose(out1, (0, 2, 1, 3))
 #         print(out0.shape)
@@ -384,9 +426,19 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
                 temp_img[:, :, :, i] = imresample(tmp, (24, 24))
             else:
                 return np.empty()
-        temp_img = (temp_img - 127.5) * 0.0078125
+#         temp_img = (temp_img - 127.5) * 0.0078125
         input_img = np.transpose(temp_img, (3, 1, 0, 2))
-        out = rnet(input_img)
+
+        image_data_arr = []
+        for i in range(input_img.shape[0]):
+            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
+            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
+            image_data_arr.append([image_data])
+
+        image_data_arr = np.asarray(image_data_arr).squeeze()
+        out = rnet(image_data_arr)
+        
+#         out = rnet(input_img)
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
 #         return (out0, out1)
@@ -413,9 +465,19 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
                 tmp_img[:, :, :, i] = imresample(tmp, (48, 48))
             else:
                 return np.empty()
-        tmp_img = (tmp_img - 127.5) * 0.0078125
+#         tmp_img = (tmp_img - 127.5) * 0.0078125
         input_img = np.transpose(tmp_img, (3, 1, 0, 2))
-        out = onet(input_img)
+    
+        image_data_arr = []
+        for i in range(input_img.shape[0]):
+            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
+            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
+            image_data_arr.append([image_data])
+        
+        image_data_arr = np.asarray(image_data_arr).squeeze()
+        out = onet(image_data_arr)
+
+#         out = onet(input_img)
 #             return out
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
