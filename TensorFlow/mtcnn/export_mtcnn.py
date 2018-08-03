@@ -36,7 +36,7 @@ def export_mtcnn(base_path):
     
     graph = tf.get_default_graph()
     
-    x_pnet = graph.get_tensor_by_name('pnet/encoded_image_string_tensor:0')   
+    x_pnet = graph.get_tensor_by_name('pnet/encoded_image_string_tensor:0')
     y_pnet1 = graph.get_tensor_by_name('pnet/p_net/conv4-2/BiasAdd:0')
     y_pnet2 = graph.get_tensor_by_name('pnet/p_net/prob1/truediv:0')
     pnet_sig = (tf.saved_model.signature_def_utils.build_signature_def(

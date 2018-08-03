@@ -1,4 +1,4 @@
-MTCNN 的 TensorFlow 实现及 serving
+MTCNN 的 TensorFlow 实现
 ---
 Magic Vision 要加人脸识别功能，所以要在 TensorFlow Serving 上起一个人脸识别服务，自然想到的是 Google 的 [Facenet](https://github.com/davidsandberg/facenet)。 由于 Google 官方提供下载的 Facenet 模型中有个 [bug](https://github.com/davidsandberg/facenet/issues/789) 导致其 serving 不起来，所以要在他们的源代码上进行修改重新训练。于是乎我想干脆把他们的代码自己重新写一遍算了。至于如何从头开始训练 Facenet，参见这篇 [文章](https://github.com/davidsandberg/facenet/wiki/Classifier-training-of-inception-resnet-v1)。
 
@@ -278,17 +278,3 @@ points[5:10, :] = np.tile(total_boxes[:, 1], (5, 1)) + np.tile(hh, (5, 1)) * poi
 sudo tensorflow_model_server --port=9000 --enable_batching=true --model_config_file=/home/lzhang/model_zoo/TensorFlow/mtcnn/model.config
 ```
 启动 TF serving 服务的时候，要为 model 建一个 config 文件，里面写明了 model 的路径和名称。在 client 调用服务的时候，要用到这里制定的 model 的名称和上一步定义的 signature。
-
-
-
-
-
-
-
-
-
-
-
-
-
-end

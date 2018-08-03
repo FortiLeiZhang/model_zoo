@@ -1,0 +1,2 @@
+model_checkpoint_path: "E:/verifix/face_model/model.ckpt"
+all_model_checkpoint_paths: "E:/verifix/face_model/model.ckpt"
