@@ -8,7 +8,8 @@ import tensorflow as tf
 import cv2
 import os
 from scipy import misc
-import base64
+from io import BytesIO
+from PIL import Image
 
 class PNet(tf.keras.Model):
     def __init__(self):
@@ -347,7 +348,19 @@ def bbreg(bb, offset):
     b4 = bb[:, 3] + h * offset[:, 3]
     bb [:, 0:4] = np.transpose(np.vstack([b1, b2, b3, b4]))
     return bb
-    
+
+def generate_input_string(image):
+    image_data_arr = []
+    for i in range(image.shape[0]):
+        byte_io = BytesIO()
+        img = Image.fromarray(image[i, :, :, :].astype(np.uint8).squeeze())
+
+        img.save(byte_io, 'JPEG')
+        byte_io.seek(0)
+        image_data = byte_io.read()
+        image_data_arr.append([image_data])
+    return image_data_arr
+
 def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
     factor_cnt = 0
     total_boxes = np.empty((0, 9))
@@ -370,17 +383,10 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
 
 #         im_data = (im_data - 127.5) * 0.0078125
         input_img = np.transpose(np.expand_dims(im_data, 0), (0, 2, 1, 3))
-        
-#         input_img = input_img.copy(order='C')
-#         image_data = [base64.b64encode(input_img)]
-        
-        image_data_arr = []
-        for i in range(input_img.shape[0]):
-            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
-            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
-            image_data_arr.append([image_data])
 
+        image_data_arr = generate_input_string(input_img)
         image_data_arr = np.asarray(image_data_arr).squeeze(axis=1)
+        
         out0, out1 = pnet(image_data_arr)
 
 #         out0, out1 = pnet(input_img)
@@ -429,12 +435,7 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
 #         temp_img = (temp_img - 127.5) * 0.0078125
         input_img = np.transpose(temp_img, (3, 1, 0, 2))
 
-        image_data_arr = []
-        for i in range(input_img.shape[0]):
-            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
-            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
-            image_data_arr.append([image_data])
-
+        image_data_arr = generate_input_string(input_img)
         image_data_arr = np.asarray(image_data_arr).squeeze()
         out = rnet(image_data_arr)
         
@@ -468,12 +469,7 @@ def detect_face(img, minsize, pnet, rnet, onet, threshold, factor):
 #         tmp_img = (tmp_img - 127.5) * 0.0078125
         input_img = np.transpose(tmp_img, (3, 1, 0, 2))
     
-        image_data_arr = []
-        for i in range(input_img.shape[0]):
-            misc.imsave('/home/lzhang/mtcnn_result/tmp/001.jpg', input_img[i, :, :, :])
-            image_data = tf.gfile.FastGFile('/home/lzhang/mtcnn_result/tmp/001.jpg', 'rb').read()
-            image_data_arr.append([image_data])
-        
+        image_data_arr = generate_input_string(input_img)
         image_data_arr = np.asarray(image_data_arr).squeeze()
         out = onet(image_data_arr)
 

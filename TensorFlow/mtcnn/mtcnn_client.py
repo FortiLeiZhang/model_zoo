@@ -2,7 +2,6 @@ import time
 import cv2
 import numpy as np
 from scipy import misc
-import base64
 from io import BytesIO
 from PIL import Image
 

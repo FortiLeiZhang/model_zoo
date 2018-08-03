@@ -80,26 +80,3 @@ request.inputs['images'].CopyFrom(tensor_proto)
 ```
 
 到此，改造 MTCNN 模型的工作就完成了。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-end
