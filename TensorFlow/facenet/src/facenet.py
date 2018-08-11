@@ -152,11 +152,80 @@ def create_input_pipeline(input_q, image_size, num_preprocess_threads, batch_siz
 
     return image_batch, label_batch    
     
+def center_loss(features, label, alpha, num_classes):
+    num_feature = features.get_shape()[1]
+    centers = tf.get_variable('centers', [num_classes, num_feature], dtype=tf.float32, 
+                             initializer=tf.constant_initializer(0), trainable=False)
+    label = tf.reshape(label, [-1])
+    centers_batch = tf.gather(centers, label)
+    diff = (1 - alpha) * (centers_batch - features)
+    centers = tf.scatter_sub(centers, label, diff)
+    with tf.control_dependencies([centers]):
+        loss = tf.reduce_mean(tf.square(features - centers_batch))
+    return loss, centers    
+
+def _add_loss_summary(total_loss):
+    loss_avg = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    losses = tf.get_collection('losses')
+    loss_avg_op = loss_avg.apply(losses + [total_loss])
     
+    for loss in losses + [total_loss]:
+        tf.summary.scalar(l.op.name + ' (raw)', loss)
+        tf.summary.scalar(l.op.name, loss_avg.average(loss))
+    return loss_avg_op
+
+def train(total_loss, global_step, optimizer, learning_rate, moving_average_decay, update_gradient_vars, log_histograms=True):
+    loss_avg_op = _add_loss_summary(total_loss)
     
+    with tf.control_dependencies([loss_averages_op]):
+        if optimizer == 'ADAGRAD':
+            opt = tf.train.AdagradOptimizer(learning_rate)
+        elif optimizer == 'ADADELTA':
+            opt = tf.train.AdadeltaOptimizer(learning_rate, rho=0.9, epsilon=1e-6)
+        elif optimizer == 'ADAM':
+            opt = tf.train.AdamOptimizer(learning_rate, beta1=0.9, beta2=0.999, epsilon=0.1)
+        elif optimizer == 'RMSPROP':
+            opt = tf.train.RMSPropOptimizer(learning_rate, decay=0.9, momentum=0.9, epsilon=1.0)
+        elif optimizer == 'MOM':
+            opt = tf.train.MomentumOptimizer(learning_rate, 0.9, use_nesterov=True)
+        else:
+            raise ValueError('Invalid optimization algorithm')
     
+        grads = opt.compute_gradients(total_loss, update_gradient_vars)
+        
+    apply_gradients_op = opt.compute_gradients(grads, global_step=global_step)
+
+    if log_histograms:
+        for var in tf.trainable_variables():
+            tf.summary.histogram(var.op.name, var)
+        for grad, var in grads:
+            if grad is not None:
+                tf.summary.histogram(var.op.name + '/gradients', grad)    
     
+    var_avg = tf.train.ExponentialMovingAverage(moving_average_decay, global_step)
+    var_avg_op = var_avg.apply(tf.trainable_variables())
     
+    with tf.control_dependencies([apply_gradients_op, var_avg_op]):
+        train_op = tf.no_op(name='train')
+    return train_op    
+    
+def get_learning_rate_from_file(filename, epoch):
+    with open(filename, 'r') as f:
+        for line in f.readlines():
+            line = line.split('#', 1)[0]
+            if line:
+                par = line.strip().split(':')
+                e = int(par[0])
+                if par[1] == '-':
+                    lr = -1
+                else:
+                    lr = float(par[1])
+                if e <= epoch:
+                    learning_rate = lr
+                else:
+                    return learning_rate
+
+
     
     
     

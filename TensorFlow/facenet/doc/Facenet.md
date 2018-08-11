@@ -61,10 +61,32 @@ logits = slim.fully_connected(prelogits, len(train_set), activation_fn=None, reu
 ### 6. loss function
 对 logits 作 softmax 可以得到 cross entropy loss；对 prelogits 取 norm，可以得到 reg loss；facenet 这里还多了另外一项对 prelogits 的 center loss。把这三项加起来就是 total loss。
 
+center loss 最初是在 [A Discriminative Feature Learning Approach for Deep Face Recognition](https://github.com/FortiLeiZhang/model_zoo/blob/master/TensorFlow/facenet/doc/A%20Discriminative%20Feature%20Learning%20Approach%20for%20Deep%20Face%20Recognition.pdf) 里提出来的。它的想法是在加大类间距 (inter-class) 的同时，缩小类内距 (intra-class)。以上述 facenet 为例，我们有 N 个 sample，包含 C 个 class。因为我们为每一个人都提供了多张 (> 1) 照片，所以每一个 class 会有多个 sample。最后 NN 输出的是 512 维的向量，所以相当于将这 N 个 sample 投射到 512 维的向量空间。softmax loss 的作用是在向量空间中，使不同类别的点尽量的远离，使其 separable；而 center loss 的作用是在向量空间中，使得同一类别的点尽量的靠在一起增加内聚性，使其 discriminative。
 
-
-
-
+具体实现起来，首先建立一个形如 (C, 512) 的 tensor，对应于各个类别的 512 维 center 向量，
+```python
+centers = tf.get_variable('centers', [num_classes, num_feature], dtype=tf.float32, initializer=tf.constant_initializer(0), trainable=False)
+```
+由于我们训练时使用的是 SGD 而非所有 sample，所以要将此次训练涉及到的 center 取出来
+```python
+centers_batch = tf.gather(centers, label)
+```
+这里 gather 的作用相当于取 centers[label[i]]，得到一个形如 (len(label), 512) 的 tensor。这里面会有重复的向量。然后计算这一批的 feature 与相应的 center 之间的距离
+```python
+diff = (1 - alpha) * (centers_batch - features)
+```
+更新现在的 center 值
+```python
+centers = tf.scatter_sub(centers, label, diff)
+```
+这相当与
+```python
+centers[label[i]] -= diff[i]
+```
+最后计算 center loss
+```python
+loss = tf.reduce_mean(tf.square(features - centers_batch))
+```
 
 
 
