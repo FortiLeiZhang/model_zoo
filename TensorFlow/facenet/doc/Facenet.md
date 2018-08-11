@@ -88,8 +88,8 @@ centers[label[i]] -= diff[i]
 loss = tf.reduce_mean(tf.square(features - centers_batch))
 ```
 
-
-
+### 7. Train
+训练时还是固定的套路，算梯度，根据不同的方法来更新参数。
 
 
 
