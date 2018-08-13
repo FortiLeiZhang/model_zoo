@@ -8,23 +8,10 @@ import requests
 import json
 import base64
 
-
-'''
-from grpc.beta import implementations
-from tensorflow.python.framework.tensor_util import MakeNdarray
-from tensorflow_serving.apis import predict_pb2
-from tensorflow_serving.apis import prediction_service_pb2
-
-from tensorflow.core.framework import tensor_pb2
-from tensorflow.core.framework import tensor_shape_pb2
-from tensorflow.core.framework import types_pb2
-'''
-
 def __imresample(img, sz):
     return cv2.resize(img, (sz[1], sz[0]), interpolation=cv2.INTER_AREA)
 
 def __generateBoundingBox(imap, reg, scale, t):
-    """Use heatmap to generate bounding boxes"""
     stride = 2
     cellsize = 12
 
@@ -84,7 +71,6 @@ def __nms(boxes, threshold, method):
 
 
 def __rerec(bboxA):
-    """Convert bboxA to square."""
     h = bboxA[:, 3] - bboxA[:, 1]
     w = bboxA[:, 2] - bboxA[:, 0]
     l = np.maximum(w, h)
@@ -95,7 +81,6 @@ def __rerec(bboxA):
 
 
 def __pad(total_boxes, w, h):
-    """Compute the padding coordinates (pad the bounding boxes to square)"""
     tmpw = (total_boxes[:, 2] - total_boxes[:, 0] + 1).astype(np.int32)
     tmph = (total_boxes[:, 3] - total_boxes[:, 1] + 1).astype(np.int32)
     numbox = total_boxes.shape[0]
@@ -130,7 +115,6 @@ def __pad(total_boxes, w, h):
 
 
 def __bbreg(boundingbox, reg):
-    """Calibrate bounding boxes"""
     if reg.shape[1] == 1:
         reg = np.reshape(reg, (reg.shape[2], reg.shape[3]))
 
@@ -156,117 +140,64 @@ def generate_input_string(image):
     return image_data_arr
 
 def call_tfserver_api(signature_name, image_data_arr):
-	b64 = base64.b64encode(image_data_arr)
-	url = "http://127.0.0.1:9001/v1/models/mtcnn:predict"
-	# url = "http://172.18.25.139:8100/v1/models/mtcnn:predict"
-	data = '''
-	{
-	  "signature_name": "%s",
-	  "instances": [
-	    {
-	      "images": { "b64": "%s" }
-	    }
-	  ]
-	}
-	''' % (signature_name, b64)
+    b64 = base64.b64encode(image_data_arr)
+    url = "http://127.0.0.1:9001/v1/models/mtcnn:predict"
+    # url = "http://172.18.25.139:8100/v1/models/mtcnn:predict"
+    data = '''
+    {
+      "signature_name": "%s",
+      "instances": [
+        {
+          "images": { "b64": "%s" }
+        }
+      ]
+    }
+    ''' % (signature_name, b64)
 
-	response = requests.post(url, data=data)
-	# print(response.text)
-	json_data = json.loads(response.text)
-	return json_data
+    response = requests.post(url, data=data)
+    json_data = json.loads(response.text)
+    return json_data
 
 def call_tfserver_api_dims(signature_name, image_data_arr):
-	url = "http://127.0.0.1:9001/v1/models/mtcnn:predict"
-	# url = "http://172.18.25.139:8100/v1/models/mtcnn:predict"
-	image_list = []
-	for image_data in image_data_arr:
-		b64 = base64.b64encode(image_data)
-		item = ''' {"images": { "b64": "%s" } }''' % b64
-		image_list.append(item)
+    url = "http://127.0.0.1:9001/v1/models/mtcnn:predict"
+    # url = "http://172.18.25.139:8100/v1/models/mtcnn:predict"
+    image_list = []
+    for image_data in image_data_arr:
+        b64 = base64.b64encode(image_data)
+        item = ''' {"images": { "b64": "%s" } }''' % b64
+        image_list.append(item)
 
-	images = ",".join(image_list)
-	data = '''
-	{
-	  "signature_name": "%s",
-	  "instances": [
-		    %s
-	  ]
-	}
-	''' % (signature_name, images)
+    images = ",".join(image_list)
+    data = '''
+    {
+      "signature_name": "%s",
+      "instances": [
+            %s
+      ]
+    }
+    ''' % (signature_name, images)
 
-	response = requests.post(url, data=data)
-	json_data = json.loads(response.text)
-	return json_data
+    response = requests.post(url, data=data)
+    json_data = json.loads(response.text)
+    return json_data
 
 def pnet_serving(image):
-    '''
-    host = '127.0.0.1'
-    port = 9000
-
-    channel = implementations.insecure_channel(host, port)
-    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-
-    request = predict_pb2.PredictRequest()
-
-    request.model_spec.name = 'mtcnn'
-
-    request.model_spec.signature_name = 'pnet_predict'
-
-    '''
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze(axis=1)
     result = call_tfserver_api("pnet_predict", image_data_arr)
     predictions = result['predictions']
-    # print("pnet predictions: %d" % predictions)
     predict = predictions[0]
     result1 = [predict["result1"]]
     result2 = [predict["result2"]]
     tf_ndarray =  [np.array(result1), np.array(result2)]
     return tf_ndarray
 
-    '''
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=1)]
-    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
-    tensor_proto = tensor_pb2.TensorProto(
-        dtype=types_pb2.DT_STRING,
-        tensor_shape=tensor_shape_proto,
-        string_val=[image_data for image_data in image_data_arr])
-    request.inputs['images'].CopyFrom(tensor_proto)
-
-    result = stub.Predict(request, 10.0)
-    ndarray = MakeNdarray(result.outputs['result1'])
-    print("good ndarray:")
-    print(ndarray.shape)
-    print(ndarray)
-    return [MakeNdarray(result.outputs['result1']),
-            MakeNdarray(result.outputs['result2'])]
-    '''
-
 def rnet_serving(image):
-    '''
-    host = '127.0.0.1'
-    port = 9000
-
-    channel = implementations.insecure_channel(host, port)
-    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-
-    request = predict_pb2.PredictRequest()
-
-    request.model_spec.name = 'mtcnn'
-
-    request.model_spec.signature_name = 'rnet_predict'
-
-    '''
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze()
-    print(len(image_data_arr))
     image_data_arr_dim2 = image_data_arr
-    # print("rnet image_data_arr shape: {}" . format(image_data_arr_dim2.shape))
     result = call_tfserver_api_dims("rnet_predict", image_data_arr_dim2)
-    # print("rnet my result:")
-    # print(result)
     predictions = result['predictions']
-    # print("rnet predictions length: %d" % len(predictions))
     result1 = []
     result2 = []
     for predict in predictions:
@@ -275,54 +206,13 @@ def rnet_serving(image):
     nparray1 = np.array(result1)
     nparray2 = np.array(result2)
     tf_ndarray =  [nparray1, nparray2]
-    # print("rnet my array:")
-    # print(nparray1)
-    # print(nparray2)
     return [nparray1, nparray2]
 
-    '''
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
-    print("dims = {}" .format( dims))
-    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
-    tensor_proto = tensor_pb2.TensorProto(
-        dtype=types_pb2.DT_STRING,
-        tensor_shape=tensor_shape_proto,
-        string_val=[image_data for image_data in image_data_arr])
-    request.inputs['images'].CopyFrom(tensor_proto)    
-
-    result = stub.Predict(request, 10.0)
-    print("rnet good result:")
-    print(result)
-    ndarray1 = MakeNdarray(result.outputs['result1'])
-    ndarray2 = MakeNdarray(result.outputs['result2'])
-    print("rnet good ndarray:")
-    print(ndarray1)
-    print(ndarray2)
-    return [MakeNdarray(result.outputs['result1']),
-            MakeNdarray(result.outputs['result2'])]
-    '''
-
 def onet_serving(image):
-    '''
-    host = '127.0.0.1'
-    port = 9000
-
-    channel = implementations.insecure_channel(host, port)
-    stub = prediction_service_pb2.beta_create_PredictionService_stub(channel)
-
-    request = predict_pb2.PredictRequest()
-
-    request.model_spec.name = 'mtcnn'
-
-    request.model_spec.signature_name = 'onet_predict'
-    '''
-
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze()
-    # print("image_data_arr shape: {}" . format(image_data_arr.shape))
     result = call_tfserver_api_dims("onet_predict", image_data_arr)
     predictions = result['predictions']
-    # print("onet predictions length: %d" % len(predictions))
 
     result1 = []
     result2 = []
@@ -334,30 +224,7 @@ def onet_serving(image):
     nparray1 = np.array(result1)
     nparray2 = np.array(result2)
     nparray3 = np.array(result3)
-    # print("onet my array:")
-    # print(nparray1)
-    # print(nparray2)
-    # print(nparray3)
     return [nparray1, nparray2, nparray3]
-
-
-    '''
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
-    tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
-    tensor_proto = tensor_pb2.TensorProto(
-        dtype=types_pb2.DT_STRING,
-        tensor_shape=tensor_shape_proto,
-        string_val=[image_data for image_data in image_data_arr])
-    request.inputs['images'].CopyFrom(tensor_proto) 
-
-    result = stub.Predict(request, 10.0)
-    print("onet result good:")
-    print(result)
-
-    return [MakeNdarray(result.outputs['result1']),
-            MakeNdarray(result.outputs['result2']),
-            MakeNdarray(result.outputs['result3'])]
-    '''
 
 def detect_face(img, minsize=20, threshold=None, factor=0.709):
     if threshold is None:
@@ -371,14 +238,13 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
     minl = np.amin([h, w])
     m = 12.0 / minsize
     minl = minl * m
-    # create scale pyramid
+
     scales = []
     while minl >= 12:
         scales += [m * np.power(factor, factor_count)]
         minl = minl * factor
         factor_count += 1
 
-    # first stage
     for scale in scales:
         hs = int(np.ceil(h * scale))
         ws = int(np.ceil(w * scale))
@@ -391,10 +257,9 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
         out = pnet_serving(img_y)
         out0 = np.transpose(out[0], (0, 2, 1, 3))
         out1 = np.transpose(out[1], (0, 2, 1, 3))
-		
+
         boxes, _ = __generateBoundingBox(out1[0, :, :, 1].copy(), out0[0, :, :, :].copy(), scale, threshold[0])
 
-        # inter-scale nms
         pick = __nms(boxes.copy(), 0.5, 'Union')
         if boxes.size > 0 and pick.size > 0:
             boxes = boxes[pick, :]
@@ -417,7 +282,6 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
 
     numbox = total_boxes.shape[0]
     if numbox > 0:
-        # second stage
         tempimg = np.zeros((24, 24, 3, numbox))
         for k in range(0, numbox):
             tmp = np.zeros((int(tmph[k]), int(tmpw[k]), 3))
@@ -432,8 +296,6 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
         out = rnet_serving(tempimg1)
         out0 = np.transpose(out[0])
         out1 = np.transpose(out[1])
-        print(out0.shape)
-        print(out1.shape)
         score = out1[1, :]
         ipass = np.where(score > threshold[1])
         total_boxes = np.hstack([total_boxes[ipass[0], 0:4].copy(), np.expand_dims(score[ipass].copy(), 1)])
@@ -447,7 +309,6 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
 
     numbox = total_boxes.shape[0]
     if numbox > 0:
-        # third stage
         total_boxes = np.fix(total_boxes).astype(np.int32)
         dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph = __pad(total_boxes.copy(), w, h)
         tempimg = np.zeros((48, 48, 3, numbox))

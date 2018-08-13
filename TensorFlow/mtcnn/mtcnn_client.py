@@ -4,6 +4,9 @@ import numpy as np
 from scipy import misc
 from io import BytesIO
 from PIL import Image
+import sys
+import os
+import argparse
 
 import tensorflow as tf
 from grpc.beta import implementations
@@ -165,8 +168,9 @@ def pnet_serving(image):
 
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze(axis=1)
+    num_image = image_data_arr.shape[0]
 
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=1)]
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=num_image)]
     tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
     tensor_proto = tensor_pb2.TensorProto(
         dtype=types_pb2.DT_STRING,
@@ -193,8 +197,9 @@ def rnet_serving(image):
 
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze()
+    num_image = image_data_arr.shape[0]
 
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=num_image)]
     tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
     tensor_proto = tensor_pb2.TensorProto(
         dtype=types_pb2.DT_STRING,
@@ -221,8 +226,9 @@ def onet_serving(image):
 
     image_data_arr = generate_input_string(image)
     image_data_arr = np.asarray(image_data_arr).squeeze()
+    num_image = image_data_arr.shape[0]
 
-    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=2)]
+    dims = [tensor_shape_pb2.TensorShapeProto.Dim(size=num_image)]
     tensor_shape_proto = tensor_shape_pb2.TensorShapeProto(dim=dims)
     tensor_proto = tensor_pb2.TensorProto(
         dtype=types_pb2.DT_STRING,
@@ -360,28 +366,43 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
 
     return total_boxes, points
 
-def main():
-    img = misc.imread('/home/lzhang/tmp/0000045/001.jpg')
-    bboxes, points = detect_face(img)
-
+def main(args):
+    image_dir = args.image_dir
+    files = os.listdir(image_dir)
+    
     face_crop_margin = 10
     face_size = 200
+        
+    for file in files:
+        file_name, file_ext = os.path.splitext(file)[0], os.path.splitext(file)[1]
+        img = misc.imread(os.path.join(image_dir, file))
+        bboxes, points = detect_face(img)
 
-    for index, bbox in enumerate(bboxes):
-        bbox_accuracy = bbox[4] * 100.0
-        if bbox_accuracy < 99:
-            continue
+        for index, bbox in enumerate(bboxes):
+            bbox_accuracy = bbox[4] * 100.0
+            if bbox_accuracy < 99:
+                continue
 
-        w, h = img.shape[0:2]
-        left = int(np.maximum(bbox[0] - face_crop_margin / 2, 0))
-        top = int(np.maximum(bbox[1] - face_crop_margin / 2, 0))
-        right = int(np.minimum(bbox[2] + face_crop_margin / 2, h))
-        bottom = int(np.minimum(bbox[3] + face_crop_margin / 2, w))
+            w, h = img.shape[0:2]
+            left = int(np.maximum(bbox[0] - face_crop_margin / 2, 0))
+            top = int(np.maximum(bbox[1] - face_crop_margin / 2, 0))
+            right = int(np.minimum(bbox[2] + face_crop_margin / 2, h))
+            bottom = int(np.minimum(bbox[3] + face_crop_margin / 2, w))
 
-        cropped = img[top:bottom, left:right, :]
-        cropped_img = cv2.resize(cropped, (face_size, face_size), interpolation=cv2.INTER_LINEAR)
+            cropped = img[top:bottom, left:right, :]
+            cropped_img = cv2.resize(cropped, (face_size, face_size), interpolation=cv2.INTER_LINEAR)
+            
+            save_file_name = '{}_crop_{}{}'.format(file_name, index, file_ext)
+            misc.imsave(os.path.join(image_dir, save_file_name), cropped_img)
 
-        misc.imsave('/home/lzhang/tmp/0000045/001_cropped.jpg', cropped_img)
-
+def parse_argument(argv):
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument('--image_dir', type=str, help='Directory with unaligned images.')
+    
+    return parser.parse_args(argv)
+        
 if __name__ == '__main__':
-    main()
+    main(parse_argument(sys.argv[1:]))
+
+# python ./mtcnn_client.py --image_dir='/home/lzhang/tmp/0000045'
