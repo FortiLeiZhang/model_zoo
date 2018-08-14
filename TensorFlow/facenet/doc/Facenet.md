@@ -32,6 +32,8 @@ index_deq_op = index_q.dequeue_many(args.batch_size * args.epoch_size, 'index_de
 ### 3. input queue
 input queue 中一组数据包括了 image path，label，由于在训练的时候需要对图片做一下 augmentation，所以还加入了 control 数据。 如果是做 inference 的话，label 和 control 是不是可以省掉？这个都弄完了回头再来看。
 
+后头来说这个问题，答案是可以省掉。事实上，不仅是 label 和 control 可以省掉，其他很多训练时才用到的东西都可以省掉。最后实际的做法是：自己建立一个 Graph，将作者给出模型中的参数 copy 到新建的 Graph，然后定义一个输入 placeholder，从输出 tensor 取结果就可以了。
+
 ### 4. create_input_pipeline
 这里将 input_queue 中的 (image, label, control) 元祖 dequeue 出来，根据 control 里的内容对 image 进行各种预处理，然后将处理后的 (image, label) 打包成真正输入 model 的 batch。
 
