@@ -267,22 +267,11 @@ def get_model_filenames(model_dir):
                 ckpt_file = step_str.groups()[0]
     return meta_file, ckpt_file    
     
-    
-    
-    
-    
-    
-    
-    
+def triplet_loss(anchor, positive, negative, alpha):
+    with tf.variable_scope('triplet_loss'):
+        pos_dist = tf.reduce_mean(tf.square(tf.subtract(anchor, positive)), 1)
+        neg_dist = tf.reduce_mean(tf.square(tf.subtract(anchor, negative)), 1)
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+        basic_loss = tf.add(tf.subtract(pos_dist, neg_dist), alpha)
+        loss = tf.reduce_mean(tf.maximum(basic_loss, 0.0), 0)
+    return loss
