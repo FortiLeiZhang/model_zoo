@@ -8,23 +8,6 @@ import xml.etree.ElementTree as ET
 
 from data import data_util
 
-class Transform(object):
-    def __init__(self, min_size, max_size, p=0.5):
-        self.min_size = min_size
-        self.max_size = max_size
-        self.p = p
-        
-    def __call__(self, in_data):
-        (img, bbox, label) = in_data
-
-        C, H, W = img.shape
-        scale1 = self.min_size / min(H, W)
-        scale2 = self.max_size / max(H, W)
-        scale = min(scale1, scale2)
-        
-        o_H, o_W = H * scale, W * scale
-
-
 class VOCBboxDataSet(object):
     def __init__(self, args):
         self.args = args
@@ -122,7 +105,7 @@ class VOCBboxData(VOCBboxDataSet):
             p_rnd = random.random()
             if p_rnd < self.random_hflip_ratio:
                 self.img_PIL = data_util.hflip_img(self.img_PIL)
-                self.bbox = data_util.flip_bbox(self.bbox, (o_W, o_H))
+                self.bbox = data_util.hflip_bbox(self.bbox, (o_W, o_H))
 
         if self.args.debug:
             img_PIL2 = self.img_PIL.copy()

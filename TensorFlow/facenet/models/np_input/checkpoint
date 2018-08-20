@@ -1,2 +1,0 @@
-model_checkpoint_path: "/home/lzhang/model_zoo/TensorFlow/facenet/models/my/model-my.ckpt"
-all_model_checkpoint_paths: "/home/lzhang/model_zoo/TensorFlow/facenet/models/my/model-my.ckpt"

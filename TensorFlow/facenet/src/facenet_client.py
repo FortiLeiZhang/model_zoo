@@ -15,7 +15,14 @@ from PIL import Image
 
 
 model_dir = '/home/lzhang/facenet/20180408-102900'
-image_dir = '/home/lzhang/tmp/0000045_160'
+image_dir = '/home/lzhang/tmp/test_160'
+
+def prewhiten(x):
+    mean = np.mean(x)
+    std = np.std(x)
+    std_adj = np.maximum(std, 1.0/np.sqrt(x.size))
+    y = np.multiply(np.subtract(x, mean), 1/std_adj)
+    return y  
 
 def facenet_client():
     img_list = []
@@ -26,7 +33,8 @@ def facenet_client():
         img = Image.open(img_name)
 #         img = img.resize((160, 160))
         img = np.array(img)
-        img_list.append(img)
+        img_p = prewhiten(img)
+        img_list.append(img_p)
     images = np.stack(img_list)
     
     with tf.Graph().as_default():

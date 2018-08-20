@@ -99,4 +99,4 @@ if __name__ == '__main__':
 
 # sudo tensorflow_model_server --port=9003 --enable_batching=true --model_config_file=/home/lzhang/model_zoo/TensorFlow/facenet/src/model.config
 
-# python ./facenet_serving_client.py --image_dir='/home/lzhang/tmp/0000045_160' --debug
+# python ./facenet_serving_client.py --image_dir='/home/lzhang/tmp/test_160' --debug

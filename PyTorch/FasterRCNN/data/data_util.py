@@ -34,7 +34,7 @@ def resize_bbox(bbox, in_size, out_size):
     bbox[:, 3] = x_scale * bbox[:, 3]
     return bbox
 
-def flip_bbox(bbox, size):
+def hflip_bbox(bbox, size):
     W, H = size
     bbox = bbox.copy()
     x_max = W - bbox[:, 1]

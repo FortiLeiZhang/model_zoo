@@ -347,11 +347,11 @@ def detect_face(img, minsize=20, threshold=None, factor=0.709):
     return total_boxes, points
 
 def main():
-    img = misc.imread('/home/lzhang/tmp/0000045/001.jpg')
+    img = misc.imread('/home/lzhang/tmp/test/person1.jpg')
     bboxes, points = detect_face(img)
 
     face_crop_margin = 10
-    face_size = 200
+    face_size = 160
 
     for index, bbox in enumerate(bboxes):
         bbox_accuracy = bbox[4] * 100.0
@@ -368,7 +368,7 @@ def main():
         cropped = img[top:bottom, left:right, :]
         cropped_img = cv2.resize(cropped, (face_size, face_size), interpolation=cv2.INTER_LINEAR)
 
-        misc.imsave('/home/lzhang/tmp/0000045/001_cropped.jpg', cropped_img)
+        misc.imsave('/home/lzhang/tmp/test/person1_cropped.jpg', cropped_img)
 
 if __name__ == '__main__':
     main()

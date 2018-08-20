@@ -371,7 +371,7 @@ def main(args):
     files = os.listdir(image_dir)
     
     face_crop_margin = 10
-    face_size = 200
+    face_size = 160
         
     for file in files:
         file_name, file_ext = os.path.splitext(file)[0], os.path.splitext(file)[1]

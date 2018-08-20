@@ -35,7 +35,7 @@ def load_model(sess, model, input_map=None):
 def decode_encoded_image_string_tensor(encoded_image_string_tensor):
     image_tensor = tf.image.decode_image(encoded_image_string_tensor, channels=3)
     image_tensor.set_shape((None, None, 3))
-    return image_tensor
+    return tf.image.per_image_standardization(image_tensor)
 
 def save_variables_and_metagraph(sess, saver, model_dir, model_name):
     print('Saving variables')
@@ -67,12 +67,9 @@ def main(args):
 
     with tf.Graph().as_default():
         img_str_placeholder = tf.placeholder(dtype=tf.string, shape=(None, ), name='input')
-        img_tensor = tf.map_fn(decode_encoded_image_string_tensor, elems=img_str_placeholder, dtype=tf.uint8, back_prop=False)
-        img_tensor = tf.cast(img_tensor, tf.float32)
+        img_tensor = tf.map_fn(decode_encoded_image_string_tensor, elems=img_str_placeholder, dtype=tf.float32, back_prop=False)
         img_tensor.set_shape((None, 160, 160, 3))
-        
-#         img_tensor = tf.placeholder(dtype=tf.float32, shape=(None, 160, 160, 3), name='input')
-    
+   
         prelogits, _ = network.inference(img_tensor, 1.0, phase_train=False, bottleneck_layer_size=512, weight_decay=0.0)       
         embeddings = tf.nn.l2_normalize(prelogits, 1, 1e-10, name='embeddings')
         

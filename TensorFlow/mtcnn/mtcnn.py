@@ -60,8 +60,8 @@ def to_rgb(img):
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('input_dir', type=str, help='Directory with unaligned images.', default='/home/lzhang/tmp/')
-    parser.add_argument('output_dir', type=str, help='Directory with aligned face thumbnails.', default='/home/lzhang/mtcnn_result')
+    parser.add_argument('--input_dir', type=str, help='Directory with unaligned images.', default='/home/lzhang/tmp/')
+    parser.add_argument('--output_dir', type=str, help='Directory with aligned face thumbnails.', default='/home/lzhang/mtcnn_result')
     parser.add_argument('--image_size', type=int, help='Image size (height, width) in pixels.', default=182)
     parser.add_argument('--margin', type=int, 
                        help='Margin for the crop around the bounding box (height, width) in pixels.', default=44)
@@ -119,6 +119,7 @@ def main(args):
             os.makedirs(output_class_dir)
             if args.random_order:
                 random.shuffle(cls.image_paths)
+        print(cls.image_paths)
         for image_path in cls.image_paths:
             num_images_total += 1
             filename = os.path.splitext(os.path.split(image_path)[1])[0]
