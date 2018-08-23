@@ -8,15 +8,10 @@ import numpy as np
 import argparse
 import time
 
-import torch
-from torch.autograd import Variable
-import torch.nn as nn
-import torch.optim as optim
-
-import torchvision.transforms as transforms
-from torch.utils.data.sampler import Sampler
+from torch.utils.data import DataLoader
 
 from data.dataset import VOCBboxDataSet
+from model.faster_rcnn_vgg16 import FasterRCNNVGG16
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
@@ -58,8 +53,9 @@ def parse_args(argv):
 
 def train(args):   
     dataset = VOCBboxDataSet(args)
-    for i in range(20):
-        dataset[i]
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=True, num_workers=args.num_workers)
+    
+    faster_rcnn = FasterRCNNVGG16()
     
 if __name__ == '__main__':
     train(parse_args(sys.argv[1:]))

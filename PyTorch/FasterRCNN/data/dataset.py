@@ -1,14 +1,13 @@
 import os
-import torch as t
-
 import numpy as np
 import random
 from PIL import Image
 import xml.etree.ElementTree as ET
 
 from data import data_util
+from torch.utils.data import Dataset
 
-class VOCBboxDataSet(object):
+class VOCBboxDataSet(Dataset):
     def __init__(self, args):
         self.args = args
         self.dataset_split = self.args.dataset_split

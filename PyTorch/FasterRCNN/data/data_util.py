@@ -1,7 +1,6 @@
-import numpy as np
 from PIL import Image
 from PIL import ImageDraw
-import random
+
 from torchvision import transforms as T
 
 def draw_bounding_box_on_image(image, box, color='red', thickness=4):
