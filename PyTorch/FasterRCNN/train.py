@@ -12,12 +12,13 @@ from torch.utils.data import DataLoader
 
 from data.dataset import VOCBboxDataSet
 from model.faster_rcnn_vgg16 import FasterRCNNVGG16
+from model.anchor_generator import AnchorGenerator, AnchorTargetGenerator
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--dataset_dir', default='/home/lzhang/pascal/VOC2012/', type=str, help='training dataset dir')
-    parser.add_argument('--dataset_split', default='trainval', type=str, help='training dataset split')
+    parser.add_argument('--dataset_dir', default='/home/lzhang/pascal2/VOC2007/', type=str, help='training dataset dir')
+    parser.add_argument('--dataset_split', default='train_test', type=str, help='training dataset split')
     parser.add_argument('--use_difficult', action='store_true', help='whether use difficult bbox')
     parser.add_argument('--return_difficult', action='store_true', help='whether return difficult bbox')
     parser.add_argument('--use_data_aug', action='store_true', help='whether use data augmentation')
@@ -47,15 +48,18 @@ def parse_args(argv):
     parser.add_argument('--save_ckpt_every', default=10000, type=int, help='number of iterations to save checkpoint.')
     parser.add_argument('--save_dir', default="/home/lzhang/pytorch/models", type=str, help='directory to save models')
 
-    parser.add_argument('--debug', action='store_true', help='if print debug msg')   
-
+    parser.add_argument('--debug', action='store_true', help='if print debug msg')
+    parser.add_argument('--training', action='store_true', help='if training')
+    print(parser.parse_args())
     return parser.parse_args()
 
 def train(args):   
     dataset = VOCBboxDataSet(args)
+    for i in range(20):
+        dataset[i]
     dataloader = DataLoader(dataset, batch_size=10, shuffle=True, num_workers=args.num_workers)
     
-    faster_rcnn = FasterRCNNVGG16()
+#     faster_rcnn = FasterRCNNVGG16()
     
 if __name__ == '__main__':
     train(parse_args(sys.argv[1:]))

@@ -1,40 +1,31 @@
-from PIL import Image
-from PIL import ImageDraw
-
+import cv2
 from torchvision import transforms as T
 
-def draw_bounding_box_on_image(image, box, color='red', thickness=4):
-    draw = ImageDraw.Draw(image)
-
+def draw_bounding_box_on_image(image, box, color=(0, 0, 255), thickness=4):
     ymin, xmin, ymax, xmax = box
-    (left, right, top, bottom) = (xmin, xmax, ymin, ymax)
-    draw.line([(left, top), (left, bottom), (right, bottom),
-               (right, top), (left, top)], width=thickness, fill=color)
+    cv2.rectangle(image, (xmin, ymin),(xmax, ymax), color=color, thickness=thickness)
 
 def hflip_img(img):
-    return T.functional.hflip(img)
+    return cv2.flip(img, 1)
 
 def resize_img(img, min_size=600, max_size=1000):
     img = img.copy()
-    W, H = img.size
+    H, W, _ = img.shape
     scale1 = min_size / min(W, H)
     scale2 = max_size / max(W, H)
     scale = min(scale1, scale2)
-    img.resize((int(W * scale), int(H * scale)), Image.ANTIALIAS)
-    return img
+    return cv2.resize(img, None, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR), scale
     
-def resize_bbox(bbox, in_size, out_size):
+def resize_bbox(bbox, scale):
     bbox = bbox.copy()
-    x_scale = float(out_size[0]) / in_size[0]
-    y_scale = float(out_size[1]) / in_size[1]
-    bbox[:, 0] = y_scale * bbox[:, 0]
-    bbox[:, 2] = y_scale * bbox[:, 2]
-    bbox[:, 1] = x_scale * bbox[:, 1]
-    bbox[:, 3] = x_scale * bbox[:, 3]
+    bbox[:, 0] = scale * bbox[:, 0]
+    bbox[:, 2] = scale * bbox[:, 2]
+    bbox[:, 1] = scale * bbox[:, 1]
+    bbox[:, 3] = scale * bbox[:, 3]
     return bbox
 
 def hflip_bbox(bbox, size):
-    W, H = size
+    H, W = size
     bbox = bbox.copy()
     x_max = W - bbox[:, 1]
     x_min = W - bbox[:, 3]
